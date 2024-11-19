@@ -8,10 +8,12 @@ services:
     privileged: true
     environment:
       - FLASK_ENV=development
+      - DATABASE_URL=postgresql://root:zxyoright@db:5432/zxy
     volumes:
-      - ./backend:/usr/src/app  # 将主机的 ./app 持久化挂载到容器的 /usr/src/app
+      - ./backend:/usr/src/app
+      - ./postgres/init:/docker-entrypoint-initdb.d
     working_dir: /usr/src/app
-    command: sh -c "pip install -r requirements.txt && flask run --host=0.0.0.0 --port=5000"
+    #command: sh -c "pip install -r requirements.txt && flask run --host=0.0.0.0 --port=5000"
     ports:
       - "5000:5000"
     depends_on:
@@ -27,7 +29,10 @@ services:
       POSTGRES_PASSWORD: zxyoright
       POSTGRES_DB: zxy
     volumes:
-      - pgdata:/var/lib/postgresql/data  # 将数据库数据持久化
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
 
   # Vue 前端服务
   frontend:
@@ -36,7 +41,7 @@ services:
     privileged: true
     working_dir: /usr/src/app
     volumes:
-      - ./frontend:/usr/src/app  # 将主机的 ./frontend 持久化挂载到容器的 /usr/src/app
+      - ./frontend:/usr/src/app
     command: sh -c "npm install && npm run serve"
     ports:
       - "8080:8080"

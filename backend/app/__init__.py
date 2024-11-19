@@ -13,7 +13,7 @@ def create_app():
     CORS(app)
     
     # 配置
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://username:password@localhost/cpp_perf_db'
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://root:zxyoright@postgres_db:5432/zxy'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # 初始化扩展

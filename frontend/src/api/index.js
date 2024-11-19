@@ -17,29 +17,5 @@ export default {
   },
   runTestCase(id, parameters = {}) {
     return api.post(`/test-cases/${id}/run`, { parameters })
-  },
-  
-  // 测试结果相关
-  getTestResults(testCaseId = null) {
-    return api.get('/test-results', {
-      params: { test_case_id: testCaseId }
-    })
-  },
-  getTestResult(id) {
-    return api.get(`/test-results/${id}`)
-  },
-  
-  // 定时任务相关
-  getScheduledTasks() {
-    return api.get('/scheduled-tasks')
-  },
-  createScheduledTask(data) {
-    return api.post('/scheduled-tasks', data)
-  },
-  updateScheduledTask(id, data) {
-    return api.put(`/scheduled-tasks/${id}`, data)
-  },
-  deleteScheduledTask(id) {
-    return api.delete(`/scheduled-tasks/${id}`)
   }
 } 

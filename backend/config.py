@@ -1,5 +1,4 @@
 class Config:
-    # PostgreSQL连接URI格式：postgresql://用户名:密码@主机:端口/数据库名
-    SQLALCHEMY_DATABASE_URI = 'postgresql://root:zxyoright@localhost:5432/zxy'
+    # 在 Docker 环境中，主机名应该是 PostgreSQL 容器的服务名
+    SQLALCHEMY_DATABASE_URI = 'postgresql://root:zxyoright@postgres_db:5432/zxy'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SECRET_KEY = 'your-secret-key'
