@@ -17,5 +17,13 @@ export default {
   },
   runTestCase(id, parameters = {}) {
     return api.post(`/test-cases/${id}/run`, { parameters })
+  },
+  // 添加删除方法
+  deleteTestCase(id) {
+    return api.delete(`/test-cases/${id}`)
+  },
+  // 添加更新方法
+  updateTestCase(id, data) {
+    return api.put(`/test-cases/${id}`, data)
   }
 } 
