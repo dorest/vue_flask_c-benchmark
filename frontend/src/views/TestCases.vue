@@ -45,6 +45,30 @@
         <el-button type="primary" @click="createTestCase">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 定时任务对话框 -->
+    <el-dialog 
+      title="设置定时任务" 
+      v-model="scheduleDialogVisible"
+    >
+      <el-form :model="scheduleForm">
+        <el-form-item label="执行周期">
+          <el-select v-model="scheduleForm.schedule_type">
+            <el-option label="每天" value="daily" />
+            <el-option label="每周" value="weekly" />
+            <el-option label="每月" value="monthly" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Cron表达式">
+          <el-input v-model="scheduleForm.cron_expression" placeholder="例如: 0 2 * * *" />
+          <span class="cron-hint">分 时 日 月 周</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="scheduleDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="createScheduledTask">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -62,6 +86,12 @@ export default {
       name: '',
       description: '',
       command: ''
+    })
+    const scheduleDialogVisible = ref(false)
+    const scheduleForm = ref({
+      test_case_id: null,
+      schedule_type: 'daily',
+      cron_expression: '0 2 * * *'  // 默认每天凌晨2点
     })
 
     const fetchTestCases = async () => {
@@ -99,10 +129,23 @@ export default {
 
     const runTest = async (testCase) => {
       try {
+        await ElMessageBox.confirm(
+          '确定要立即运行这个测试用例吗？',
+          '确认',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'info',
+          }
+        )
+        
         await api.runTestCase(testCase.id)
         ElMessage.success('测试启动成功')
       } catch (error) {
-        ElMessage.error('测试启动失败')
+        if (error !== 'cancel') {
+          console.error('Failed to run test:', error)
+          ElMessage.error('测试启动失败')
+        }
       }
     }
 
@@ -143,6 +186,22 @@ export default {
       }
     }
 
+    const showScheduleDialog = (testCase) => {
+      scheduleForm.value.test_case_id = testCase.id
+      scheduleDialogVisible.value = true
+    }
+
+    const createScheduledTask = async () => {
+      try {
+        await api.createScheduledTask(scheduleForm.value)
+        ElMessage.success('定时任务创建成功')
+        scheduleDialogVisible.value = false
+      } catch (error) {
+        console.error('Failed to create scheduled task:', error)
+        ElMessage.error('定时任务创建失败')
+      }
+    }
+
     onMounted(fetchTestCases)
 
     return {
@@ -154,7 +213,11 @@ export default {
       runTest,
       handleDelete,
       handleRowDblClick,
-      showCreateDialog
+      showCreateDialog,
+      scheduleDialogVisible,
+      scheduleForm,
+      showScheduleDialog,
+      createScheduledTask,
     }
   }
 }
@@ -173,5 +236,11 @@ export default {
 
 .el-button:last-child {
   margin-right: 0;
+}
+
+.cron-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 10px;
 }
 </style> 
