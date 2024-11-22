@@ -1,7 +1,8 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 from .models import TestCase, TestResult, ScheduledTask
 from .services.perf_service import PerfService
 from . import db, scheduler
+from .services.report_service import ReportService
 
 api_bp = Blueprint('api', __name__)
 
@@ -144,3 +145,124 @@ def update_test_case(id):
             'error': str(e),
             'message': '更新失败'
         }), 500
+
+
+@api_bp.route('/test-results/<int:id>/export', methods=['GET'])
+def export_test_report(id):
+    result = TestResult.query.get_or_404(id)
+    
+    # 使用报告服务生成PDF
+    report_data = ReportService.generate_test_report(result)
+    
+    response = make_response(report_data)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename=test_report_{id}.pdf'
+    
+    return response
+
+@api_bp.route('/test-results', methods=['GET'])
+def get_test_results():
+    try:
+        test_case_id = request.args.get('test_case_id', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        query = TestResult.query
+        
+        if test_case_id:
+            query = query.filter_by(test_case_id=test_case_id)
+        if start_date:
+            query = query.filter(TestResult.start_time >= start_date)
+        if end_date:
+            query = query.filter(TestResult.end_time <= end_date)
+            
+        results = query.order_by(TestResult.start_time.desc()).all()
+        
+        # 即使没有数据也返回空列表，而不是404
+        return jsonify({
+            'code': 200,
+            'data': [{
+                'id': result.id,
+                'test_case_id': result.test_case_id,
+                'test_case_name': result.test_case.name,
+                'start_time': result.start_time.isoformat() if result.start_time else None,
+                'end_time': result.end_time.isoformat() if result.end_time else None,
+                'status': result.status,
+                'flamegraph_path': result.flamegraph_path
+            } for result in results],
+            'message': '获取成功'
+        })
+    except Exception as e:
+        print(f"Error fetching test results: {str(e)}")  # 添加日志
+        return jsonify({
+            'code': 500,
+            'data': [],
+            'message': str(e)
+        }), 500
+
+@api_bp.route('/test-results/<int:id>/details', methods=['GET'])
+def get_test_result_details(id):
+    try:
+        result = TestResult.query.get_or_404(id)
+        
+        # 获取性能数据
+        perf_data = result.perf_data or {}
+        
+        # 构造返回数据
+        response_data = {
+            'code': 200,
+            'data': {
+                'cpu_data': perf_data.get('cpu_data', []),
+                'memory_data': perf_data.get('memory_data', []),
+                'response_time_data': perf_data.get('response_time_data', []),
+                'benchmark_data': [
+                    {
+                        'metric': 'CPU平均使用率',
+                        'current': calculate_average(perf_data.get('cpu_data', [])),
+                        'baseline': 50,  # 示例基准值
+                        'diff': calculate_diff(calculate_average(perf_data.get('cpu_data', [])), 50)
+                    },
+                    {
+                        'metric': '内存平均使用',
+                        'current': calculate_average(perf_data.get('memory_data', [])),
+                        'baseline': 500,  # 示例基准值
+                        'diff': calculate_diff(calculate_average(perf_data.get('memory_data', [])), 500)
+                    },
+                    {
+                        'metric': '平均响应时间',
+                        'current': calculate_average(perf_data.get('response_time_data', [])),
+                        'baseline': 100,  # 示例基准值
+                        'diff': calculate_diff(calculate_average(perf_data.get('response_time_data', [])), 100)
+                    }
+                ]
+            },
+            'message': '获取成功'
+        }
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        print(f"Error fetching test result details: {str(e)}")  # 添加日志
+        return jsonify({
+            'code': 500,
+            'data': {
+                'cpu_data': [],
+                'memory_data': [],
+                'response_time_data': [],
+                'benchmark_data': []
+            },
+            'message': str(e)
+        }), 500
+
+# 辅助函数：计算平均值
+def calculate_average(data_list):
+    if not data_list:
+        return 0
+    values = [item.get('value', 0) for item in data_list]
+    return sum(values) / len(values)
+
+# 辅助函数：计算差异百分比
+def calculate_diff(current, baseline):
+    if baseline == 0:
+        return 0
+    return ((current - baseline) / baseline) * 100
