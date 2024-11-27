@@ -3,8 +3,13 @@ from .models import TestCase, TestResult, ScheduledTask
 from .services.perf_service import PerfService
 from . import db, scheduler
 from .services.report_service import ReportService
+from .utils.test_client import TestClient
+from datetime import datetime
+from flask_cors import cross_origin
 
 api_bp = Blueprint('api', __name__)
+
+test_client = TestClient()
 
 @api_bp.route('/test-cases', methods=['GET','POST'])
 def create_test_case():
@@ -251,6 +256,48 @@ def get_test_result_details(id):
                 'response_time_data': [],
                 'benchmark_data': []
             },
+            'message': str(e)
+        }), 500
+
+@api_bp.route('/test-cases/<int:id>/execute', methods=['POST'])
+@cross_origin()
+def execute_test_case(id):
+    try:
+        test_case = TestCase.query.get_or_404(id)
+        
+        # 通过 Socket 客户端执行测试
+        response = test_client.execute_test(
+            test_id=id,
+            config=test_case.config
+        )
+        
+        if 'error' in response:
+            return jsonify({
+                'code': 500,
+                'message': response['error']
+            }), 500
+            
+        # 创建测试结果记录
+        result = TestResult(
+            test_case_id=id,
+            start_time=datetime.now(),
+            status='running',
+            result_dir=response['result_dir']
+        )
+        db.session.add(result)
+        db.session.commit()
+        
+        return jsonify({
+            'code': 200,
+            'message': '测试已启动',
+            'data': {
+                'result_id': result.id
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'code': 500,
             'message': str(e)
         }), 500
 

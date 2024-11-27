@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# 1. 参数解析
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --config)
+            CONFIG="$2"
+            shift 2
+            ;;
+        --output)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# 2. 确保输出目录存在
+echo "Creating output directory: $OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR/metrics"
+
+# 3. 显示测试信息
+echo "Starting test with config: $CONFIG"
+echo "Output directory: $OUTPUT_DIR"
+
+# 4. 记录开始状态
+echo "Test started at $(date)" > "$OUTPUT_DIR/status.txt"
+
+# 5. 收集性能数据
+for i in {1..30}; do
+    timestamp=$(date +%s)
+    
+    # CPU 使用率
+    cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}')
+    echo "$timestamp $cpu_usage" >> "$OUTPUT_DIR/metrics/cpu.txt"
+    
+    # 内存使用
+    memory_usage=$(free -m | awk 'NR==2{print $3}')
+    echo "$timestamp $memory_usage" >> "$OUTPUT_DIR/metrics/memory.txt"
+    
+    sleep 1
+done
+
+# 6. 记录结束状态
+echo "Test completed at $(date)" >> "$OUTPUT_DIR/status.txt"
+echo "Status: success" >> "$OUTPUT_DIR/status.txt"
+
+echo "Test completed successfully"
+exit 0
