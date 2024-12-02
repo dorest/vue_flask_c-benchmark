@@ -6,6 +6,8 @@ from .services.report_service import ReportService
 from .utils.test_client import TestClient
 from datetime import datetime
 from flask_cors import cross_origin
+import socket
+import json
 
 api_bp = Blueprint('api', __name__)
 
@@ -259,22 +261,35 @@ def get_test_result_details(id):
             'message': str(e)
         }), 500
 
+def send_to_test_server(test_id, command):
+    """与测试服务器通信"""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.connect(('localhost', 9999))
+        request = {
+            'action': 'execute_test',
+            'test_id': test_id,
+            'command': command
+        }
+        sock.send(json.dumps(request).encode())
+        response = sock.recv(1024).decode()
+        return json.loads(response)
+    finally:
+        sock.close()
+
 @api_bp.route('/test-cases/<int:id>/execute', methods=['POST'])
 @cross_origin()
 def execute_test_case(id):
     try:
         test_case = TestCase.query.get_or_404(id)
         
-        # 通过 Socket 客户端执行测试
-        response = test_client.execute_test(
-            test_id=id,
-            config=test_case.config
-        )
+        # 发送命令到测试服务器
+        response = send_to_test_server(id, test_case.command)
         
-        if 'error' in response:
+        if response.get('status') == 'error':
             return jsonify({
                 'code': 500,
-                'message': response['error']
+                'message': response.get('error', '测试执行失败')
             }), 500
             
         # 创建测试结果记录

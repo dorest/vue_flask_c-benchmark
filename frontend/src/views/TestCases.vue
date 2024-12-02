@@ -14,7 +14,10 @@
         <el-table-column prop="command" label="命令" />
         <el-table-column label="操作" width="280">
           <template #default="scope">
-            <el-button @click="runTest(scope.row)">运行</el-button>
+            <el-button 
+              @click="runTest(scope.row)"
+              :loading="executingStates.get(scope.row.id)"
+            >运行</el-button>
             <el-button @click="showScheduleDialog(scope.row)">定时</el-button>
             <el-button 
               type="danger" 
@@ -37,7 +40,12 @@
           <el-input type="textarea" v-model="newTestCase.description" />
         </el-form-item>
         <el-form-item label="命令">
-          <el-input v-model="newTestCase.command" />
+          <el-input 
+            type="textarea" 
+            v-model="newTestCase.command"
+            :rows="5"
+            placeholder="请输入测试命令，支持多行命令"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -73,7 +81,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
 
@@ -94,10 +102,15 @@ export default {
       cron_expression: '0 2 * * *'  // 默认每天凌晨2点
     })
 
+    const executingStates = reactive(new Map())
+
     const fetchTestCases = async () => {
       try {
         const response = await api.getTestCases()
         testCases.value = response.data
+        testCases.value.forEach(testCase => {
+          executingStates.set(testCase.id, false)
+        })
       } catch (error) {
         console.error('Failed to fetch test cases:', error)
         ElMessage.error('加载测试用例失败')
@@ -139,6 +152,8 @@ export default {
           }
         )
         
+        executingStates.set(testCase.id, true)
+        
         await api.runTestCase(testCase.id)
         ElMessage.success('测试启动成功')
       } catch (error) {
@@ -146,6 +161,8 @@ export default {
           console.error('Failed to run test:', error)
           ElMessage.error('测试启动失败')
         }
+      } finally {
+        executingStates.set(testCase.id, false)
       }
     }
 
@@ -218,6 +235,7 @@ export default {
       scheduleForm,
       showScheduleDialog,
       createScheduledTask,
+      executingStates,
     }
   }
 }
