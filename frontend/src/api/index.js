@@ -43,8 +43,20 @@ export default {
   createTestCase(data) {
     return api.post('/test-cases', data)
   },
-  runTestCase(id, parameters = {}) {
-    return api.post(`/test-cases/${id}/run`, { parameters })
+  runTestCase(id) {
+    return api.post(`/test-cases/${id}/execute`)
+      .then(response => {
+        return {
+          data: {
+            code: response.data.code || 200,
+            data: {
+              result_id: response.data.data?.result_id,
+              result_dir: response.data.data?.result_dir
+            },
+            message: response.data.message
+          }
+        }
+      })
   },
   // 添加删除方法
   deleteTestCase(id) {
@@ -79,5 +91,40 @@ export default {
     return api.get(`/test-results/${id}/export`, {
       responseType: 'blob'
     })
+  },
+  // 添加获取测试执行结果的方法
+  getTestResult(id) {
+    return api.get(`/test-results/${id}`)
+      .then(response => {
+        return {
+          data: {
+            code: response.data.code || 200,
+            data: {
+              id: response.data.data?.id,
+              test_case_name: response.data.data?.test_case_name,
+              start_time: response.data.data?.start_time,
+              status: response.data.data?.status,
+              result_dir: response.data.data?.result_dir,
+              output: response.data.data?.output
+            },
+            message: response.data.message
+          }
+        }
+      })
+  },
+  // 添加获取测试输出的方法
+  getTestOutput(resultDir) {
+    return api.get(`/test-results/output`, {
+      params: { result_dir: resultDir }
+    })
+      .then(response => {
+        return {
+          data: {
+            code: response.data.code || 200,
+            data: response.data.data || '',
+            message: response.data.message
+          }
+        }
+      })
   }
 } 

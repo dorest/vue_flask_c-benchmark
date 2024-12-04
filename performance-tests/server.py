@@ -80,50 +80,71 @@ class TestServer:
                 'result_dir': result_dir
             }
     
-    def run(self):
-        while True:
-            conn, addr = self.sock.accept()
-            try:
-                print(f"Connection from {addr}")
-                data = conn.recv(1024).decode()
-                request = json.loads(data)
-                
-                if request['action'] == 'execute_test':
-                    # 在新线程中执行测试
-                    thread = threading.Thread(
-                        target=lambda: self.handle_test_request(request, conn)
-                    )
-                    thread.start()
-                else:
-                    conn.send(json.dumps({
-                        'status': 'error',
-                        'error': 'Unknown action'
-                    }).encode())
-            except Exception as e:
-                print(f"Error handling request: {e}")
-                try:
-                    conn.send(json.dumps({
-                        'status': 'error',
-                        'error': str(e)
-                    }).encode())
-                except:
-                    pass
-            finally:
-                conn.close()
-    
     def handle_test_request(self, request, conn):
+        """处理测试请求的线程函数"""
         try:
             result = self.execute_test(
                 request['test_id'],
                 request['command']
             )
-            conn.send(json.dumps(result).encode())
+            conn.sendall(json.dumps(result).encode())
         except Exception as e:
-            conn.send(json.dumps({
-                'status': 'error',
-                'error': str(e)
-            }).encode())
+            try:
+                conn.sendall(json.dumps({
+                    'status': 'error',
+                    'error': str(e)
+                }).encode())
+            except:
+                print(f"Error sending response: {e}")
+        finally:
+            conn.close()
+    
+    def run(self):
+        while True:
+            try:
+                print("Waiting for connection...")
+                conn, addr = self.sock.accept()
+                print(f"Connection from {addr}")
+                
+                try:
+                    data = conn.recv(1024).decode()
+                    request = json.loads(data)
+                    
+                    if request['action'] == 'execute_test':
+                        # 在新线程中执行测试，不在主线程关闭连接
+                        thread = threading.Thread(
+                            target=self.handle_test_request,
+                            args=(request, conn)
+                        )
+                        thread.daemon = True  # 设置为守护线程
+                        thread.start()
+                    else:
+                        conn.sendall(json.dumps({
+                            'status': 'error',
+                            'error': 'Unknown action'
+                        }).encode())
+                        conn.close()
+                except json.JSONDecodeError as e:
+                    print(f"JSON decode error: {e}")
+                    conn.sendall(json.dumps({
+                        'status': 'error',
+                        'error': f'Invalid JSON: {str(e)}'
+                    }).encode())
+                    conn.close()
+                except Exception as e:
+                    print(f"Error handling request: {e}")
+                    try:
+                        conn.sendall(json.dumps({
+                            'status': 'error',
+                            'error': str(e)
+                        }).encode())
+                    except:
+                        pass
+                    conn.close()
+                    
+            except Exception as e:
+                print(f"Error accepting connection: {e}")
 
 if __name__ == '__main__':
     server = TestServer()
-    server.run()
+    server.run() 

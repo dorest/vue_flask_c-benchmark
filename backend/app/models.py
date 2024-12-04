@@ -24,6 +24,7 @@ class TestResult(db.Model):
     perf_data = db.Column(db.JSON)
     benchmark_data = db.Column(db.JSON)
     flamegraph_path = db.Column(db.Text)
+    result_dir = db.Column(db.Text)
 
 class ScheduledTask(db.Model):
     __tablename__ = 'scheduled_tasks'

@@ -51,3 +51,5 @@ perf.data.old
 *.log
 logs/
 
+# 测试结果
+performance-tests/results/

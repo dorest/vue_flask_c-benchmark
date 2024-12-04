@@ -14,10 +14,7 @@
         <el-table-column prop="command" label="命令" />
         <el-table-column label="操作" width="280">
           <template #default="scope">
-            <el-button 
-              @click="runTest(scope.row)"
-              :loading="executingStates.get(scope.row.id)"
-            >运行</el-button>
+            <el-button @click="runTest(scope.row)">运行</el-button>
             <el-button @click="showScheduleDialog(scope.row)">定时</el-button>
             <el-button 
               type="danger" 
@@ -84,6 +81,7 @@
 import { ref, onMounted, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
+import { useRouter } from 'vue-router'  // 导入 useRouter
 
 export default {
   setup() {
@@ -99,10 +97,11 @@ export default {
     const scheduleForm = ref({
       test_case_id: null,
       schedule_type: 'daily',
-      cron_expression: '0 2 * * *'  // 默认每天凌晨2点
+      cron_expression: '0 2 * * *'
     })
 
     const executingStates = reactive(new Map())
+    const router = useRouter()  // 使用 useRouter
 
     const fetchTestCases = async () => {
       try {
@@ -154,8 +153,14 @@ export default {
         
         executingStates.set(testCase.id, true)
         
-        await api.runTestCase(testCase.id)
-        ElMessage.success('测试启动成功')
+        const response = await api.runTestCase(testCase.id)
+        if (response.data.code === 200) {
+          ElMessage.success('测试启动成功')
+          // 跳转到结果页面
+          router.push(`/test-results/${response.data.data.result_id}`)
+        } else {
+          ElMessage.error(response.data.message || '测试启动失败')
+        }
       } catch (error) {
         if (error !== 'cancel') {
           console.error('Failed to run test:', error)
