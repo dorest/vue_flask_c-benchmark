@@ -78,13 +78,20 @@ export default {
         })
   },
   getTestResultDetails(id) {
-      return api.get(`/test-results/${id}/details`)
-          .then(response => {
-              return {
-                  data: response.data.data || {},
-                  message: response.data.message
-              }
-          })
+    return api.get(`/test-results/${id}/details`)
+      .then(response => {
+        return {
+          data: {
+            cpu_data: response.data.data?.cpu_data || [],
+            memory_data: response.data.data?.memory_data || [],
+            response_time_data: response.data.data?.response_time_data || [],
+            benchmark_data: response.data.data?.benchmark_data || [],
+            logs: response.data.data?.logs || [],
+            flamegraph_path: response.data.data?.flamegraph_path,
+            message: response.data.message
+          }
+        }
+      })
   },
   // 导出测试报告
   exportTestReport(id) {
@@ -122,6 +129,32 @@ export default {
           data: {
             code: response.data.code || 200,
             data: response.data.data || '',
+            message: response.data.message
+          }
+        }
+      })
+  },
+  // 获取测试日志
+  getTestLogs(id) {
+    return api.get(`/test-results/${id}/logs`)
+      .then(response => {
+        return {
+          data: {
+            logs: response.data.data?.logs || [],
+            status: response.data.data?.status,
+            end_time: response.data.data?.end_time,
+            message: response.data.message
+          }
+        }
+      })
+  },
+  // 删除测试结果
+  deleteTestResult(id) {
+    return api.delete(`/test-results/${id}`)
+      .then(response => {
+        return {
+          data: {
+            code: response.data.code || 200,
             message: response.data.message
           }
         }

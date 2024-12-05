@@ -4,9 +4,10 @@ from .services.perf_service import PerfService
 from . import db, scheduler
 from .services.report_service import ReportService
 from .utils.test_client import TestClient
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask_cors import cross_origin
-
+import os
+from flask import current_app
 api_bp = Blueprint('api', __name__)
 
 test_client = TestClient()
@@ -206,12 +207,21 @@ def get_test_results():
         }), 500
 
 @api_bp.route('/test-results/<int:id>/details', methods=['GET'])
+@cross_origin()
 def get_test_result_details(id):
     try:
         result = TestResult.query.get_or_404(id)
         
         # 获取性能数据
         perf_data = result.perf_data or {}
+        
+        # 获取日志
+        logs = []
+        if result.result_dir:
+            log_path = os.path.join(result.result_dir, 'output.log')
+            if os.path.exists(log_path):
+                with open(log_path, 'r') as f:
+                    logs = f.read().splitlines()
         
         # 构造返回数据
         response_data = {
@@ -224,22 +234,24 @@ def get_test_result_details(id):
                     {
                         'metric': 'CPU平均使用率',
                         'current': calculate_average(perf_data.get('cpu_data', [])),
-                        'baseline': 50,  # 示例基准值
+                        'baseline': 50,
                         'diff': calculate_diff(calculate_average(perf_data.get('cpu_data', [])), 50)
                     },
                     {
                         'metric': '内存平均使用',
                         'current': calculate_average(perf_data.get('memory_data', [])),
-                        'baseline': 500,  # 示例基准值
+                        'baseline': 500,
                         'diff': calculate_diff(calculate_average(perf_data.get('memory_data', [])), 500)
                     },
                     {
                         'metric': '平均响应时间',
                         'current': calculate_average(perf_data.get('response_time_data', [])),
-                        'baseline': 100,  # 示例基准值
+                        'baseline': 100,
                         'diff': calculate_diff(calculate_average(perf_data.get('response_time_data', [])), 100)
                     }
-                ]
+                ],
+                'logs': logs,  # 添加日志到详情中
+                'flamegraph_path': result.flamegraph_path
             },
             'message': '获取成功'
         }
@@ -247,14 +259,16 @@ def get_test_result_details(id):
         return jsonify(response_data)
         
     except Exception as e:
-        print(f"Error fetching test result details: {str(e)}")  # 添加日志
+        print(f"Error fetching test result details: {str(e)}")
         return jsonify({
             'code': 500,
             'data': {
                 'cpu_data': [],
                 'memory_data': [],
                 'response_time_data': [],
-                'benchmark_data': []
+                'benchmark_data': [],
+                'logs': [],
+                'flamegraph_path': None
             },
             'message': str(e)
         }), 500
@@ -266,6 +280,7 @@ def execute_test_case(id):
         test_case = TestCase.query.get_or_404(id)
         
         # 通过 Socket 客户端执行测试
+        
         response = test_client.execute_test(
             test_id=id,
             command=test_case.command
@@ -301,6 +316,122 @@ def execute_test_case(id):
             'message': str(e)
         }), 500
 
+@api_bp.route('/test-results/<int:id>/logs', methods=['GET'])
+@cross_origin()
+def get_test_logs(id):
+    try:
+        result = TestResult.query.get_or_404(id)
+        
+        # 从测试服务器获取日志
+        response = test_client.get_logs(result.test_case_id)
+        
+        # 如果测试已完成，更新状态
+        if response.get('status') == 'completed':
+            result.status = 'success' if response.get('success') else 'failed'
+            result.end_time = datetime.now()
+            db.session.commit()
+        
+        return jsonify({
+            'code': 200,
+            'data': {
+                'logs': response.get('logs', []),
+                'status': result.status,
+                'end_time': result.end_time.isoformat() if result.end_time else None
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            'code': 500,
+            'message': str(e)
+        }), 500
+
+@api_bp.route('/test-results/<int:id>', methods=['DELETE'])
+@cross_origin()
+def delete_test_result(id):
+    try:
+        result = TestResult.query.get_or_404(id)
+        
+        # 删除结果目录（如果存在）
+        if result.result_dir and os.path.exists(result.result_dir):
+            import shutil
+            shutil.rmtree(result.result_dir)
+        
+        # 删除数据库记录
+        db.session.delete(result)
+        db.session.commit()
+        
+        return jsonify({
+            'code': 200,
+            'message': '删除成功'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'code': 500,
+            'message': str(e)
+        }), 500
+
+@api_bp.route('/test-results/update-status', methods=['POST'])
+def update_test_status():
+    try:
+        data = request.get_json()
+        test_case_id = data['test_case_id']
+        start_timestamp = datetime.fromisoformat(data['start_timestamp'])
+                # 打印收到的时间戳
+        current_app.logger.info(f"Received start_timestamp: {start_timestamp}")
+        
+                # 查找对应时间戳的测试结果
+        results = TestResult.query.filter(
+            TestResult.test_case_id == test_case_id,
+            TestResult.status == 'running'
+        ).all()
+        
+        # 打印所有找到的运行中的测试结果
+        for r in results:
+            current_app.logger.info(
+                f"Found running test - ID: {r.id}, "
+                f"test_case_id: {r.test_case_id}, "
+                f"start_time: {r.start_time}, "
+                f"time_diff: {abs((r.start_time - start_timestamp).total_seconds())} seconds"
+            )
+        
+        # 查找对应时间戳的测试结果
+        result = TestResult.query.filter(
+            TestResult.test_case_id == test_case_id,
+            TestResult.start_time >= start_timestamp - timedelta(seconds=5),  # 给个5秒的容差
+            TestResult.start_time <= start_timestamp + timedelta(seconds=5),
+            TestResult.status == 'running'
+        ).order_by(TestResult.start_time.desc()).first()
+        
+        if result:
+            current_app.logger.info(
+                f"Updating test result - ID: {result.id}, "
+                f"Previous status: {result.status}, "
+                f"New status: {data['status']}"
+            )
+            result.status = data['status']
+            if data.get('end_time'):
+                result.end_time = datetime.fromisoformat(data['end_time'])
+            
+            db.session.commit()
+            
+            return jsonify({
+                'code': 200,
+                'message': 'Status updated successfully'
+            })
+        else:
+            return jsonify({
+                'code': 404,
+                'message': 'No matching test result found'
+            }), 404
+            
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'code': 500,
+            'message': str(e)
+        }), 500
+        
 # 辅助函数：计算平均值
 def calculate_average(data_list):
     if not data_list:

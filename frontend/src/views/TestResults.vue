@@ -35,63 +35,71 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="300">
+        <el-table-column label="操作" width="200">
           <template #default="scope">
             <el-button @click="showDetails(scope.row)">详情</el-button>
-            <el-button @click="showFlameGraph(scope.row)">火焰图</el-button>
-            <el-button @click="exportReport(scope.row)">导出报告</el-button>
+            <el-button type="danger" @click="deleteResult(scope.row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
     <!-- 详情对话框 -->
-    <el-dialog v-model="detailsVisible" title="测试详情" width="80%">
-      <div class="performance-charts">
-        <div class="chart-container">
-          <h3>CPU使用率</h3>
-          <v-chart :option="cpuChartOption" autoresize />
-        </div>
-        <div class="chart-container">
-          <h3>内存使用</h3>
-          <v-chart :option="memoryChartOption" autoresize />
-        </div>
-        <div class="chart-container">
-          <h3>响应时间分布</h3>
-          <v-chart :option="responseTimeChartOption" autoresize />
-        </div>
-      </div>
-      
-      <!-- 基准线比较 -->
-      <div class="benchmark-comparison">
-        <h3>基准线比较</h3>
-        <el-table :data="benchmarkData" border>
-          <el-table-column prop="metric" label="指标" />
-          <el-table-column prop="current" label="当前值" />
-          <el-table-column prop="baseline" label="基准值" />
-          <el-table-column prop="diff" label="差异">
-            <template #default="scope">
-              <span :class="getDiffClass(scope.row.diff)">
-                {{ scope.row.diff }}%
-              </span>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-    </el-dialog>
-
-    <!-- 火焰图对话框 -->
-    <el-dialog v-model="flameGraphVisible" title="火焰图" width="90%">
-      <div class="flame-graph-container">
-        <img :src="currentFlameGraphUrl" alt="Flame Graph" v-if="currentFlameGraphUrl" />
-      </div>
+    <el-dialog v-model="detailsVisible" title="测试详情" width="90%">
+      <el-tabs>
+        <el-tab-pane label="性能图表">
+          <div class="performance-charts">
+            <div class="chart-container">
+              <h3>CPU使用率</h3>
+              <v-chart :option="cpuChartOption" autoresize />
+            </div>
+            <div class="chart-container">
+              <h3>内存使用</h3>
+              <v-chart :option="memoryChartOption" autoresize />
+            </div>
+            <div class="chart-container">
+              <h3>响应时间分布</h3>
+              <v-chart :option="responseTimeChartOption" autoresize />
+            </div>
+          </div>
+          
+          <div class="benchmark-comparison">
+            <h3>基准线比较</h3>
+            <el-table :data="benchmarkData" border>
+              <el-table-column prop="metric" label="指标" />
+              <el-table-column prop="current" label="当前值" />
+              <el-table-column prop="baseline" label="基准值" />
+              <el-table-column prop="diff" label="差异">
+                <template #default="scope">
+                  <span :class="getDiffClass(scope.row.diff)">
+                    {{ scope.row.diff }}%
+                  </span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-tab-pane>
+        
+        <el-tab-pane label="火焰图">
+          <div class="flame-graph-container">
+            <img :src="currentFlameGraphUrl" alt="Flame Graph" v-if="currentFlameGraphUrl" />
+            <div v-else class="no-data">暂无火焰图数据</div>
+          </div>
+        </el-tab-pane>
+        
+        <el-tab-pane label="控制台输出">
+          <div class="console-output">
+            <pre v-for="(log, index) in testLogs" :key="index" :class="getLogClass(log)">{{ log }}</pre>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
     </el-dialog>
   </div>
 </template>
 
 <script>
-import { ref, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, onMounted, watch, onUnmounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
 
 export default {
@@ -105,6 +113,8 @@ export default {
     const flameGraphVisible = ref(false)
     const currentFlameGraphUrl = ref('')
     const benchmarkData = ref([])  // 添加这行
+    const testLogs = ref([])
+    const logPollingInterval = ref(null)
     // 图表配置
     const cpuChartOption = ref({
       title: { 
@@ -257,8 +267,19 @@ export default {
       try {
         const response = await api.getTestResultDetails(result.id)
         updateCharts(response.data)
+        currentFlameGraphUrl.value = response.data.flamegraph_path
+        testLogs.value = response.data.logs || []
         detailsVisible.value = true
+        
+        // 检查测试状态并启动轮询
+        if (result.status === 'running') {
+          console.log('Starting log polling for test:', result.id)
+          startLogPolling(result.id)
+        } else {
+          console.log('Test not running, status:', result.status)
+        }
       } catch (error) {
+        console.error('加载详情失败:', error)
         ElMessage.error('加载详情失败')
       }
     }
@@ -312,6 +333,94 @@ export default {
       }
     }
 
+    // 获取日志样式
+    const getLogClass = (log) => {
+      if (log.includes('[STDERR]')) {
+        return 'log-error'
+      }
+      if (log.includes('Error:')) {
+        return 'log-error'
+      }
+      if (log.includes('[STDOUT]')) {
+        return 'log-output'
+      }
+      return 'log-info'
+    }
+
+    // 获取测试日志
+    const fetchTestLogs = async (resultId) => {
+      try {
+        const response = await api.getTestLogs(resultId)
+        if (response.data) {
+          // 更新日志
+          testLogs.value = response.data.logs || []
+          
+          // 更新测试状态
+          const result = testResults.value.find(r => r.id === resultId)
+          if (result) {
+            const newStatus = response.data.status
+            if (newStatus && newStatus !== result.status) {
+              result.status = newStatus
+              // 如果有结束时间，也更新它
+              if (response.data.end_time) {
+                result.end_time = response.data.end_time
+              }
+            }
+            
+            // 如果测试已完成，停止轮询并刷新数据
+            if (newStatus && newStatus !== 'running') {
+              stopLogPolling()
+              await loadTestResults() // 重新加载列表以获取完整数据
+            }
+          }
+        }
+      } catch (error) {
+        console.error('获取日志失败:', error)
+        stopLogPolling() // 发生错误时停止轮询
+      }
+    }
+        // 开始日志轮询
+    const startLogPolling = (resultId) => {
+      console.log('Starting polling for test:', resultId)
+      stopLogPolling() // 确保先停止之前的轮询
+      
+      logPollingInterval.value = setInterval(async () => {
+        await fetchTestLogs(resultId)
+      }, 3000) // 每3秒轮询一次
+    }
+
+    const stopLogPolling = () => {
+      if (logPollingInterval.value) {
+        console.log('Stopping polling')
+        clearInterval(logPollingInterval.value)
+        logPollingInterval.value = null
+      }
+    }
+        
+    // 删除测试结果
+    const deleteResult = async (result) => {
+      try {
+        await ElMessageBox.confirm('确定要删除该测试结果吗？', '提示', {
+          type: 'warning'
+        })
+        
+        await api.deleteTestResult(result.id)
+        ElMessage.success('删除成功')
+        loadTestResults()  // 重新加载列表
+        
+      } catch (error) {
+        if (error !== 'cancel') {
+          ElMessage.error('删除失败')
+        }
+      }
+    }
+    
+    watch(detailsVisible, (newValue) => {
+      if (!newValue) { // 当对话框关闭时
+        stopLogPolling() // 停止轮询
+      }
+    })
+    
     onMounted(async () => {
       await Promise.all([
         loadTestResults(),
@@ -326,6 +435,11 @@ export default {
       width: '100%',
       height: '300px'
     }
+
+    // 在组件卸载时清理
+    onUnmounted(() => {
+      stopLogPolling()
+    })
 
     return {
       testResults,
@@ -346,7 +460,10 @@ export default {
       getStatusType,
       getDiffClass,
       chartStyle,
-      chartRefs
+      chartRefs,
+      testLogs,
+      deleteResult,
+      getLogClass
     }
   }
 }
@@ -410,5 +527,39 @@ export default {
 /* 添加过渡效果 */
 .el-dialog__body {
   transition: all 0.3s ease;
+}
+
+.console-output {
+  height: 400px;
+  overflow-y: auto;
+  background: #1e1e1e;
+  padding: 10px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.console-output pre {
+  margin: 0;
+  padding: 2px 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.log-error {
+  color: #ff6b6b;
+}
+
+.log-output {
+  color: #a8ff60;
+}
+
+.log-info {
+  color: #d7d7d7;
+}
+
+.no-data {
+  text-align: center;
+  padding: 20px;
+  color: #909399;
 }
 </style> 

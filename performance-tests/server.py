@@ -4,100 +4,208 @@ import subprocess
 import os
 from datetime import datetime
 import threading
+import queue
+import requests  # 新增
+import logging
+from logging.handlers import RotatingFileHandler
 
 class TestServer:
     def __init__(self):
         self.base_dir = '/root/flask-vue/performance-tests'
+        self.log_dir = os.path.join(self.base_dir, 'logs')
+        os.makedirs(self.log_dir, exist_ok=True)
+        self.setup_logging()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(('0.0.0.0', 9999))
         self.sock.listen(1)
         print("Test server started on 0.0.0.0:9999")
+        # 存储每个测试的日志队列和状态
+        self.test_logs = {}
+        self.test_status = {}
+        self.api_url = 'http://172.18.0.3:5000'  # 根据实际情况修改
+        self.test_timestamps = {}  # 存储 test_case_id 对应的启动时间
+        # 禁用代理设置
+        os.environ['NO_PROXY'] = '*'
+        os.environ['no_proxy'] = '*'
         
+    def setup_logging(self):
+        """配置日志记录器"""
+        self.logger = logging.getLogger('TestServer')
+        self.logger.setLevel(logging.DEBUG)
+        
+        # 创建格式化器
+        formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - [%(threadName)s] - %(message)s'
+        )
+        
+        # 控制台处理器
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+        
+        # 文件处理器（带轮转）
+        file_handler = RotatingFileHandler(
+            os.path.join(self.log_dir, 'server.log'),
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=5
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        
+        # 添加处理器
+        self.logger.addHandler(console_handler)
+        self.logger.addHandler(file_handler)
+    
+    def update_test_status(self, test_case_id, start_timestamp, status, end_time=None):
+        """通过 HTTP 更新测试状态"""
+        try:
+            data = {
+                'test_case_id': test_case_id,
+                'start_timestamp': start_timestamp.isoformat(),
+                'status': status,
+                'end_time': end_time.isoformat() if end_time else None
+            }
+            
+            self.logger.info(f"Updating status for test case {test_case_id}")
+            self.logger.debug(f"Update data: {data}")
+            
+            response = requests.post(
+                f'{self.api_url}/test-results/update-status',  # 新的 API 路径
+                json=data,
+                proxies={'http': None, 'https': None},
+                timeout=5
+            )
+            
+            if response.status_code != 200:
+                self.logger.error(f"Error updating status: {response.text}")
+            else:
+                self.logger.info(f"Successfully updated test case {test_case_id} status to {status}")
+                
+        except Exception as e:
+            self.logger.error(f"Error calling API: {e}", exc_info=True)
+            
     def execute_test(self, test_id, command):
         """执行测试命令并收集结果"""
-        # 创建结果目录
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        result_dir = os.path.join(self.base_dir, 'results', f'{timestamp}_{test_id}')
+        timestamp = datetime.now()
+        self.logger.info(f"Starting test execution for test case: {test_id} at {timestamp}")
+        
+        result_dir = os.path.join(self.base_dir, 'results', 
+                                 f"{timestamp.strftime('%Y%m%d_%H%M%S')}_{test_id}")
         os.makedirs(result_dir, exist_ok=True)
+
         
-        # 记录开始时间
-        with open(f"{result_dir}/status.txt", 'w') as f:
-            f.write(f"Test started at: {datetime.now()}\n")
-            f.write(f"Commands to execute:\n{command}\n")
+        # 创建日志队列
+        log_queue = queue.Queue()
+        self.test_logs[test_id] = log_queue
+        self.test_status[test_id] = 'running'
         
-        try:
-            # 分行执行命令
-            commands = command.split('\n')
-            for i, cmd in enumerate(commands, 1):
-                cmd = cmd.strip()
-                if not cmd:
-                    continue
-                    
-                print(f"Executing command {i}: {cmd}")
-                
-                # 执行命令并收集输出
-                process = subprocess.Popen(
-                    cmd,
-                    shell=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    cwd=result_dir
-                )
-                
-                stdout, stderr = process.communicate()
-                
-                # 记录命令输出
-                with open(f"{result_dir}/output.log", 'a') as f:
-                    f.write(f"\n=== Command {i}: {cmd} ===\n")
-                    f.write("=== STDOUT ===\n")
-                    f.write(stdout.decode())
-                    f.write("\n=== STDERR ===\n")
-                    f.write(stderr.decode())
-                    f.write("\n")
-                
-                if process.returncode != 0:
-                    raise Exception(f"Command failed with exit code {process.returncode}")
-            
-            # 记录成功状态
-            with open(f"{result_dir}/status.txt", 'a') as f:
-                f.write(f"\nTest completed successfully at: {datetime.now()}\n")
-                
-            return {
-                'status': 'success',
-                'result_dir': result_dir
-            }
-            
-        except Exception as e:
-            # 记录失败状态
-            with open(f"{result_dir}/status.txt", 'a') as f:
-                f.write(f"\nTest failed at: {datetime.now()}\n")
-                f.write(f"Error: {str(e)}\n")
-            
-            return {
-                'status': 'error',
-                'error': str(e),
-                'result_dir': result_dir
-            }
-    
-    def handle_test_request(self, request, conn):
-        """处理测试请求的线程函数"""
-        try:
-            result = self.execute_test(
-                request['test_id'],
-                request['command']
-            )
-            conn.sendall(json.dumps(result).encode())
-        except Exception as e:
+        def log_message(msg):
+            """记录日志到文件和队列"""
+            log_queue.put(msg)
+            with open(f"{result_dir}/output.log", 'a') as f:
+                f.write(f"{msg}\n")
+        
+        def run_test():
             try:
-                conn.sendall(json.dumps({
-                    'status': 'error',
-                    'error': str(e)
-                }).encode())
-            except:
-                print(f"Error sending response: {e}")
-        finally:
-            conn.close()
+                log_message(f"Test started at: {datetime.now()}")
+                log_message(f"Commands to execute:\n{command}")
+                
+                commands = command.split('\n')
+                for i, cmd in enumerate(commands, 1):
+                    cmd = cmd.strip()
+                    if not cmd:
+                        continue
+                        
+                    log_message(f"\nExecuting command {i}: {cmd}")
+                    
+                    process = subprocess.Popen(
+                        cmd,
+                        shell=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        cwd=result_dir,
+                        bufsize=1,
+                        universal_newlines=True
+                    )
+                    
+                    # 实时读取输出
+                    while True:
+                        stdout_line = process.stdout.readline()
+                        stderr_line = process.stderr.readline()
+                        
+                        if not stdout_line and not stderr_line and process.poll() is not None:
+                            break
+                            
+                        if stdout_line:
+                            log_message(f"[STDOUT] {stdout_line.strip()}")
+                        if stderr_line:
+                            log_message(f"[STDERR] {stderr_line.strip()}")
+                    
+                    if process.returncode != 0:
+                        raise Exception(f"Command failed with exit code {process.returncode}")
+                
+                log_message(f"\nTest completed successfully at: {datetime.now()}")
+                self.test_status[test_id] = 'success'
+                self.update_test_status(test_id, timestamp, 'success', datetime.now())
+            except Exception as e:
+                error_msg = str(e)
+                log_message(f"\nTest failed at: {datetime.now()}")
+                log_message(f"Error: {error_msg}")
+                self.test_status[test_id] = 'failed'
+                self.update_test_status(test_id, timestamp, 'failed', datetime.now())
+            finally:
+                # 测试完成后清理日志队列
+                if test_id in self.test_logs:
+                    del self.test_logs[test_id]
+        
+        # 启动测试线程
+        thread = threading.Thread(target=run_test)
+        thread.daemon = True
+        thread.start()
+        
+        # 返回初始响应
+        return {
+            'status': 'running',
+            'result_dir': result_dir,
+            'timestamp': timestamp.isoformat()
+        }
+    
+    def get_test_logs(self, test_id):
+        """获取测试日志"""
+        logs = []
+        status = self.test_status.get(test_id, 'unknown')
+        
+        if test_id not in self.test_logs:
+            # 如果没有实时日志，尝试从文件读取
+            result_dir = self.find_result_dir(test_id)
+            if result_dir and os.path.exists(f"{result_dir}/output.log"):
+                with open(f"{result_dir}/output.log", 'r') as f:
+                    logs = f.read().splitlines()
+        else:
+            # 从队列获取所有可用日志
+            queue = self.test_logs[test_id]
+            while not queue.empty():
+                logs.append(queue.get_nowait())
+        
+        return {
+            'status': status,
+            'logs': logs
+        }
+    
+    def find_result_dir(self, test_id):
+        """查找最新的结果目录"""
+        results_dir = os.path.join(self.base_dir, 'results')
+        if not os.path.exists(results_dir):
+            return None
+            
+        matching_dirs = [d for d in os.listdir(results_dir) if d.endswith(f"_{test_id}")]
+        if not matching_dirs:
+            return None
+            
+        # 返回最新的目录
+        latest_dir = sorted(matching_dirs)[-1]
+        return os.path.join(results_dir, latest_dir)
     
     def run(self):
         while True:
@@ -111,26 +219,24 @@ class TestServer:
                     request = json.loads(data)
                     
                     if request['action'] == 'execute_test':
-                        # 在新线程中执行测试，不在主线程关闭连接
-                        thread = threading.Thread(
-                            target=self.handle_test_request,
-                            args=(request, conn)
+                        # 执行测试
+                        result = self.execute_test(
+                            request['test_id'],
+                            request['command']
                         )
-                        thread.daemon = True  # 设置为守护线程
-                        thread.start()
+                        conn.sendall(json.dumps(result).encode())
+                        
+                    elif request['action'] == 'get_logs':
+                        # 获取日志
+                        result = self.get_test_logs(request['test_id'])
+                        conn.sendall(json.dumps(result).encode())
+                        
                     else:
                         conn.sendall(json.dumps({
                             'status': 'error',
                             'error': 'Unknown action'
                         }).encode())
-                        conn.close()
-                except json.JSONDecodeError as e:
-                    print(f"JSON decode error: {e}")
-                    conn.sendall(json.dumps({
-                        'status': 'error',
-                        'error': f'Invalid JSON: {str(e)}'
-                    }).encode())
-                    conn.close()
+                        
                 except Exception as e:
                     print(f"Error handling request: {e}")
                     try:
@@ -140,6 +246,7 @@ class TestServer:
                         }).encode())
                     except:
                         pass
+                finally:
                     conn.close()
                     
             except Exception as e:
@@ -147,4 +254,4 @@ class TestServer:
 
 if __name__ == '__main__':
     server = TestServer()
-    server.run() 
+    server.run()
