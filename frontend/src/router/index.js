@@ -19,6 +19,12 @@ const routes = [
     component: TestResults
   },
   {
+    path: '/results/:id',
+    name: 'TestResultDetail',
+    component: TestResults,
+    props: true
+  },
+  {
     path: '/schedules',
     name: 'ScheduledTasks',
     component: ScheduledTasks

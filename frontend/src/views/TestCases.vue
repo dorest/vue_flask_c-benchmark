@@ -157,7 +157,7 @@ export default {
         if (response.data.code === 200) {
           ElMessage.success('测试启动成功')
           // 跳转到结果页面
-          router.push(`/test-results/${response.data.data.result_id}`)
+          router.push(`/results/${response.data.data.result_id}`)
         } else {
           ElMessage.error(response.data.message || '测试启动失败')
         }

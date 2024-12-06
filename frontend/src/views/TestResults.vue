@@ -134,8 +134,13 @@ import api from '../api'
 import WebSocketService from '../services/websocket'
 
 export default {
-
-  setup() {
+  props: {
+    id: {
+      type: [String, Number],
+      default: null
+    }
+  },
+  setup(props) {
     const testResults = ref([])
     const testCases = ref([])
     const selectedTestCase = ref(null)
