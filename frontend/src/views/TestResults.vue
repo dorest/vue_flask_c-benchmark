@@ -27,14 +27,10 @@
       <el-table :data="testResults" style="width: 100%">
         <el-table-column prop="test_case_name" label="测试用例" />
         <el-table-column prop="start_time" label="开始时间" :formatter="formatTime" />
-        <el-table-column label="结束时间">
+        <el-table-column prop="end_time" label="结束时间" :formatter="formatTime" />
+        <el-table-column prop="status" label="状态">
           <template #default="scope">
-            {{ scope.row.end_time ? new Date(scope.row.end_time).toLocaleString() : '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column label="状态">
-          <template #default="scope">
-            <el-tag :type="getStatusType(scope.row.status)" v-model="scope.row.status">
+            <el-tag :type="getStatusType(scope.row.status)">
               {{ scope.row.status }}
             </el-tag>
           </template>
@@ -105,6 +101,7 @@
 import { ref, onMounted, watch, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
+import WebSocketService from '../services/websocket'
 
 export default {
 
@@ -154,7 +151,7 @@ export default {
         data: [],
         smooth: true,  // 平滑曲线
         showSymbol: false,  // 隐藏数据点
-        areaStyle: {  // 添加区域填充
+        areaStyle: {  // 加区域填充
           opacity: 0.1
         }
       }]
@@ -435,8 +432,22 @@ export default {
       }
     })
     
-    onMounted(async () => {
-      await Promise.all([
+    const handleWebSocketMessage = (data) => {
+      const result = testResults.value.find(r => r.id === data.test_id)
+      if (result) {
+        result.status = data.status
+        if (data.end_time) {
+          result.end_time = data.end_time
+        }
+      }
+    }
+
+    onMounted(() => {
+      // 订阅 WebSocket 消息
+      WebSocketService.subscribe(handleWebSocketMessage)
+      
+      // 加载数据
+      Promise.all([
         loadTestResults(),
         api.getTestCases().then(response => {
           testCases.value = response.data
@@ -444,16 +455,17 @@ export default {
       ])
     })
 
+    onUnmounted(() => {
+      // 取消订阅 WebSocket 消息
+      WebSocketService.unsubscribe(handleWebSocketMessage)
+      stopLogPolling()
+    })
+
     // 修改图表容器样式
     const chartStyle = {
       width: '100%',
       height: '300px'
     }
-
-    // 在组件卸载时清理
-    onUnmounted(() => {
-      stopLogPolling()
-    })
 
     return {
       testResults,
@@ -477,7 +489,7 @@ export default {
       chartRefs,
       testLogs,
       deleteResult,
-      getLogClass
+      getLogClass,
     }
   }
 }
@@ -541,5 +553,39 @@ export default {
 /* 添加过渡效果 */
 .el-dialog__body {
   transition: all 0.3s ease;
+}
+
+.console-output {
+  height: 400px;
+  overflow-y: auto;
+  background: #1e1e1e;
+  padding: 10px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.console-output pre {
+  margin: 0;
+  padding: 2px 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.log-error {
+  color: #ff6b6b;
+}
+
+.log-output {
+  color: #a8ff60;
+}
+
+.log-info {
+  color: #d7d7d7;
+}
+
+.no-data {
+  text-align: center;
+  padding: 20px;
+  color: #909399;
 }
 </style> 

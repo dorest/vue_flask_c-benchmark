@@ -8,9 +8,39 @@ from datetime import datetime, timedelta
 from flask_cors import cross_origin
 import os
 from flask import current_app
+from . import sock
+import json
+
 api_bp = Blueprint('api', __name__)
 
 test_client = TestClient()
+
+active_connections = set()
+
+@sock.route('/ws/test-status')
+def test_status_socket(ws):
+    """WebSocket 连接处理"""
+    active_connections.add(ws)
+    try:
+        while True:
+            # 保持连接活跃
+            ws.receive()
+    except Exception:
+        pass
+    finally:
+        active_connections.remove(ws)
+
+def notify_clients(data):
+    """向所有连接的客户端发送更新"""
+    dead_connections = set()
+    for ws in active_connections:
+        try:
+            ws.send(json.dumps(data))
+        except Exception:
+            dead_connections.add(ws)
+    
+    # 清理断开的连接
+    active_connections.difference_update(dead_connections)
 
 @api_bp.route('/test-cases', methods=['GET','POST'])
 def create_test_case():
@@ -414,6 +444,13 @@ def update_test_status():
                 result.end_time = datetime.fromisoformat(data['end_time'])
             
             db.session.commit()
+            
+            # 通知所有客户端状态更新
+            notify_clients({
+                'test_id': result.id,
+                'status': result.status,
+                'end_time': result.end_time.isoformat() if result.end_time else None
+            })
             
             return jsonify({
                 'code': 200,
