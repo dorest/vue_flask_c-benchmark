@@ -45,21 +45,51 @@
     </el-card>
 
     <!-- 详情对话框 -->
-    <el-dialog v-model="detailsVisible" title="测试详情" width="90%">
-      <el-tabs>
-        <el-tab-pane label="性能图表">
+    <el-dialog 
+      v-model="detailsVisible" 
+      title="测试详情" 
+      width="90%" 
+      destroy-on-close
+      @closed="handleDialogClose"
+    >
+      <el-tabs v-model="activeTab">
+        <el-tab-pane label="性能图表" name="charts">
           <div class="performance-charts">
-            <div class="chart-container">
+            <!-- CPU图表 -->
+            <div class="chart-wrapper">
               <h3>CPU使用率</h3>
-              <v-chart :option="cpuChartOption" autoresize />
+              <div class="chart-container">
+                <v-chart 
+                  ref="cpuChart"
+                  :option="cpuChartOption" 
+                  :manual-update="true"
+                  @mounted="handleChartMounted('cpu')"
+                />
+              </div>
             </div>
-            <div class="chart-container">
+            <!-- 内存图表 -->
+            <div class="chart-wrapper">
               <h3>内存使用</h3>
-              <v-chart :option="memoryChartOption" autoresize />
+              <div class="chart-container">
+                <v-chart 
+                  ref="memoryChart"
+                  :option="memoryChartOption"
+                  :manual-update="true"
+                  @mounted="handleChartMounted('memory')"
+                />
+              </div>
             </div>
-            <div class="chart-container">
+            <!-- 响应时间图表 -->
+            <div class="chart-wrapper">
               <h3>响应时间分布</h3>
-              <v-chart :option="responseTimeChartOption" autoresize />
+              <div class="chart-container">
+                <v-chart 
+                  ref="responseTimeChart"
+                  :option="responseTimeChartOption"
+                  :manual-update="true"
+                  @mounted="handleChartMounted('responseTime')"
+                />
+              </div>
             </div>
           </div>
           
@@ -98,7 +128,7 @@
 </template>
 
 <script>
-import { ref, onMounted, watch, onUnmounted } from 'vue'
+import { ref, onMounted, watch, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
 import WebSocketService from '../services/websocket'
@@ -116,6 +146,12 @@ export default {
     const benchmarkData = ref([])  // 添加这行
     const testLogs = ref([])
     const logPollingInterval = ref(null)
+    const activeTab = ref('charts')
+    const charts = ref({
+      cpu: null,
+      memory: null,
+      responseTime: null
+    })
     // 图表配置
     const cpuChartOption = ref({
       title: { 
@@ -267,28 +303,33 @@ export default {
     const showDetails = async (result) => {
       try {
         const response = await api.getTestResultDetails(result.id)
-        console.log(response)
         updateCharts(response.data)
         currentFlameGraphUrl.value = response.data.flamegraph_path
         testLogs.value = response.data.logs || []
+        activeTab.value = 'charts' // 重置为默认tab
         detailsVisible.value = true
         
-        // 检查测试状态并启动轮询
+        // 在下一个 tick 更新图表
+        nextTick(() => {
+          Object.values(charts.value).forEach(chart => {
+            if (chart) {
+              chart.resize()
+            }
+          })
+        })
+
         if (result.status === 'running') {
-          console.log('Starting log polling for test:', result.id)
           startLogPolling(result.id)
         } else {
-          console.log('Test not running, status:', result.status)
-      // 如果测试已完成，直接获取完整日志
           try {
             const logsResponse = await api.getTestLogs(result.id)
-            if (logsResponse.data && logsResponse.data.logs) {
+            if (logsResponse.data?.logs) {
               testLogs.value = logsResponse.data.logs
             }
           } catch (error) {
-        console.error('获取完整日志失败:', error)
-      }
-    }
+            console.error('获取完整日志失败:', error)
+          }
+        }
       } catch (error) {
         console.error('加载详情失败:', error)
         ElMessage.error('加载详情失败')
@@ -297,10 +338,23 @@ export default {
 
     // 更新图表数据
     const updateCharts = (data) => {
-      cpuChartOption.value.series[0].data = data.cpu_data
-      memoryChartOption.value.series[0].data = data.memory_data
-      responseTimeChartOption.value.series[0].data = data.response_time_data
-      // 更新基准数据
+      const options = {
+        cpu: cpuChartOption,
+        memory: memoryChartOption,
+        responseTime: responseTimeChartOption
+      }
+
+      Object.entries(options).forEach(([type, option]) => {
+        option.value.series[0].data = data[`${type}_data`] || []
+        nextTick(() => {
+          const chart = charts.value[type]
+          if (chart) {
+            chart.setOption(option.value)
+            chart.resize()
+          }
+        })
+      })
+
       benchmarkData.value = data.benchmark_data || []
     }
 
@@ -467,6 +521,32 @@ export default {
       height: '300px'
     }
 
+    // 处理图表挂载
+    const handleChartMounted = (type) => {
+      nextTick(() => {
+        const chart = charts.value[type]
+        if (chart) {
+          chart.resize()
+        }
+      })
+    }
+
+    // 处理对话框关闭
+    const handleDialogClose = () => {
+      stopLogPolling()
+      // 清理图表实例
+      Object.values(charts.value).forEach(chart => {
+        if (chart) {
+          chart.dispose()
+        }
+      })
+      charts.value = {
+        cpu: null,
+        memory: null,
+        responseTime: null
+      }
+    }
+
     return {
       testResults,
       testCases,
@@ -490,6 +570,9 @@ export default {
       testLogs,
       deleteResult,
       getLogClass,
+      activeTab,
+      handleChartMounted,
+      handleDialogClose,
     }
   }
 }
@@ -514,18 +597,22 @@ export default {
   margin-bottom: 20px;
 }
 
-.chart-container {
-  height: 300px;
-  padding: 10px;
+.chart-wrapper {
   background: #fff;
-  border-radius: 4px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1);
 }
 
-.chart-container h3 {
-  margin: 0 0 10px 0;
-  font-size: 14px;
-  color: #606266;
+.chart-container {
+  height: 300px;
+  width: 100%;
+}
+
+/* 确保图表正确渲染 */
+:deep(.echarts) {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .benchmark-comparison {
