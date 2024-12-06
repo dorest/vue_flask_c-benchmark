@@ -8,6 +8,7 @@ APScheduler==3.10.4
 reportlab==4.0.4
 matplotlib==3.7.1
 numpy==1.21.6  # 固定 numpy 为兼容版本
+flask-sock==0.7.0
 
 
 
