@@ -266,6 +266,7 @@ export default {
     const showDetails = async (result) => {
       try {
         const response = await api.getTestResultDetails(result.id)
+        console.log(response)
         updateCharts(response.data)
         currentFlameGraphUrl.value = response.data.flamegraph_path
         testLogs.value = response.data.logs || []
@@ -277,7 +278,16 @@ export default {
           startLogPolling(result.id)
         } else {
           console.log('Test not running, status:', result.status)
-        }
+      // 如果测试已完成，直接获取完整日志
+          try {
+            const logsResponse = await api.getTestLogs(result.id)
+            if (logsResponse.data && logsResponse.data.logs) {
+              testLogs.value = logsResponse.data.logs
+            }
+          } catch (error) {
+        console.error('获取完整日志失败:', error)
+      }
+    }
       } catch (error) {
         console.error('加载详情失败:', error)
         ElMessage.error('加载详情失败')

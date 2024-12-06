@@ -176,6 +176,8 @@ class TestServer:
         logs = []
         status = self.test_status.get(test_id, 'unknown')
         
+        print(f"获取测试日志self.test_logs：{self.test_logs}")
+        
         if test_id not in self.test_logs:
             # 如果没有实时日志，尝试从文件读取
             result_dir = self.find_result_dir(test_id)
