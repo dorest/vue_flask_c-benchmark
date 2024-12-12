@@ -241,7 +241,7 @@ export default {
             minute: '2-digit',
             second: '2-digit',
             hour12: false
-          })}<br/>CPU: ${params[0].data[1].toFixed(2)}%`
+          })}<br/>Memory: ${params[0].data[1].toFixed(2)}%`
         }
       },
       grid: {
