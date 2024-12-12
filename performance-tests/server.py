@@ -8,6 +8,8 @@ import queue
 import requests  # 新增
 import logging
 from logging.handlers import RotatingFileHandler
+import psutil
+import time
 
 class TestServer:
     def __init__(self):
@@ -28,6 +30,7 @@ class TestServer:
         # 禁用代理设置
         os.environ['NO_PROXY'] = '*'
         os.environ['no_proxy'] = '*'
+        self.perf_data = {}  # 新增：存储性能数据
         
     def setup_logging(self):
         """配置日志记录器"""
@@ -57,7 +60,7 @@ class TestServer:
         self.logger.addHandler(console_handler)
         self.logger.addHandler(file_handler)
     
-    def update_test_status(self, test_case_id, start_timestamp, status, end_time=None):
+    def update_test_status(self, test_case_id, start_timestamp, status, end_time=None, perf_data=None):
         """通过 HTTP 更新测试状态"""
         try:
             data = {
@@ -67,11 +70,14 @@ class TestServer:
                 'end_time': end_time.isoformat() if end_time else None
             }
             
+            # 添加性能数据
+            if perf_data:
+                data['perf_data'] = perf_data
+            
             self.logger.info(f"Updating status for test case {test_case_id}")
-            self.logger.debug(f"Update data: {data}")
             
             response = requests.post(
-                f'{self.api_url}/test-results/update-status',  # 新的 API 路径
+                f'{self.api_url}/test-results/update-status',
                 json=data,
                 proxies={'http': None, 'https': None},
                 timeout=5
@@ -108,6 +114,14 @@ class TestServer:
         
         def run_test():
             try:
+                # 启动性能监控线程
+                monitor_thread = threading.Thread(
+                    target=self.collect_performance_metrics,
+                    args=(test_id, result_dir)
+                )
+                monitor_thread.daemon = True
+                monitor_thread.start()
+                
                 log_message(f"Test started at: {datetime.now()}")
                 log_message(f"Commands to execute:\n{command}")
                 
@@ -147,17 +161,21 @@ class TestServer:
                 
                 log_message(f"\nTest completed successfully at: {datetime.now()}")
                 self.test_status[test_id] = 'success'
-                self.update_test_status(test_id, timestamp, 'success', datetime.now())
+                
+                # 等待性能监控线程结束
+                monitor_thread.join(timeout=5)
+                self.update_test_status(test_id, timestamp, 'success', datetime.now(), self.perf_data.get(test_id))
+                
             except Exception as e:
                 error_msg = str(e)
                 log_message(f"\nTest failed at: {datetime.now()}")
                 log_message(f"Error: {error_msg}")
                 self.test_status[test_id] = 'failed'
-                self.update_test_status(test_id, timestamp, 'failed', datetime.now())
+                self.update_test_status(test_id, timestamp, 'failed', datetime.now(), self.perf_data.get(test_id))
             finally:
                 # 测试完成后清理日志队列
                 if test_id in self.test_logs:
-                    del self.test_logs[test_id]
+                    del self.test_logs[test_id] 
         
         # 启动测试线程
         thread = threading.Thread(target=run_test)
@@ -208,6 +226,41 @@ class TestServer:
         # 返回最新的目录
         latest_dir = sorted(matching_dirs)[-1]
         return os.path.join(results_dir, latest_dir)
+    
+    def collect_performance_metrics(self, test_id, result_dir):
+        """收集性能指标"""
+        perf_data = {
+            'cpu_data': [],
+            'memory_data': []
+        }
+        
+        perf_file = os.path.join(result_dir, 'performance.json')
+        
+        while self.test_status.get(test_id) == 'running':
+            timestamp = datetime.now().isoformat()
+            
+            # 收集 CPU 使用率
+            cpu_percent = psutil.cpu_percent(interval=1)
+            perf_data['cpu_data'].append({
+                'timestamp': timestamp,
+                'value': cpu_percent
+            })
+            
+            # 收集内存使用情况
+            memory = psutil.virtual_memory()
+            perf_data['memory_data'].append({
+                'timestamp': timestamp,
+                'value': memory.percent
+            })
+            
+            # 实时保存性能数据到文件
+            with open(perf_file, 'w') as f:
+                json.dump(perf_data, f)
+            
+            time.sleep(1)
+        
+        self.perf_data[test_id] = perf_data
+        return perf_data
     
     def run(self):
         while True:

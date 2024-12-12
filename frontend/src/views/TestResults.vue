@@ -60,9 +60,10 @@
               <h3>CPU使用率</h3>
               <div class="chart-container">
                 <v-chart 
+                  class="chart"
                   ref="cpuChart"
                   :option="cpuChartOption" 
-                  :manual-update="true"
+                  autoresize
                   @mounted="handleChartMounted('cpu')"
                 />
               </div>
@@ -72,9 +73,10 @@
               <h3>内存使用</h3>
               <div class="chart-container">
                 <v-chart 
+                  class="chart"
                   ref="memoryChart"
                   :option="memoryChartOption"
-                  :manual-update="true"
+                  autoresize
                   @mounted="handleChartMounted('memory')"
                 />
               </div>
@@ -84,9 +86,10 @@
               <h3>响应时间分布</h3>
               <div class="chart-container">
                 <v-chart 
+                  class="chart"
                   ref="responseTimeChart"
                   :option="responseTimeChartOption"
-                  :manual-update="true"
+                  autoresize
                   @mounted="handleChartMounted('responseTime')"
                 />
               </div>
@@ -167,37 +170,59 @@ export default {
       },
       tooltip: { 
         trigger: 'axis',
-        formatter: '{b}<br/>{a}: {c}%'
+        formatter: function(params) {
+          // 直接使用原始的 ISO 时间字符串进行格式化
+          const date = new Date(params[0].data[0])
+          return `${date.toLocaleString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+          })}<br/>CPU: ${params[0].data[1].toFixed(2)}%`
+        }
       },
       grid: {
         left: '3%',
         right: '4%',
         bottom: '3%',
+        top: '60px',
         containLabel: true
       },
       xAxis: { 
         type: 'time',
         axisLabel: {
-          formatter: '{HH:mm:ss}'
+          formatter: function(value) {
+            const date = new Date(value)
+            return date.toLocaleTimeString('zh-CN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false
+            })
+          },
+          hideOverlap: true
         }
       },
       yAxis: { 
         type: 'value',
         name: '使用率(%)',
-        max: 100
+        min: 0,
+        max: 100,
+        splitLine: {
+          show: true
+        }
       },
       series: [{
         name: 'CPU使用率',
         type: 'line',
+        showSymbol: false,
         data: [],
-        smooth: true,  // 平滑曲线
-        showSymbol: false,  // 隐藏数据点
-        areaStyle: {  // 加区域填充
+        smooth: true,
+        areaStyle: {
           opacity: 0.1
         }
       }]
     })
-
 
     const memoryChartOption = ref({
       title: { 
@@ -208,30 +233,54 @@ export default {
       },
       tooltip: { 
         trigger: 'axis',
-        formatter: '{b}<br/>{a}: {c}MB'
+        formatter: function(params) {
+          // 直接使用原始的 ISO 时间字符串进行格式化
+          const date = new Date(params[0].data[0])
+          return `${date.toLocaleString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+          })}<br/>CPU: ${params[0].data[1].toFixed(2)}%`
+        }
       },
       grid: {
         left: '3%',
         right: '4%',
         bottom: '3%',
+        top: '60px',
         containLabel: true
       },
       xAxis: { 
         type: 'time',
         axisLabel: {
-          formatter: '{HH:mm:ss}'
+          formatter: function(value) {
+            const date = new Date(value)
+            return date.toLocaleTimeString('zh-CN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false
+            })
+          },
+          hideOverlap: true
         }
       },
       yAxis: { 
         type: 'value',
-        name: '使用量(MB)'
+        name: '使用率(%)',
+        min: 0,
+        max: 100,
+        splitLine: {
+          show: true
+        }
       },
       series: [{
-        name: '内存使用',
+        name: '内存使用率',
         type: 'line',
+        showSymbol: false,
         data: [],
         smooth: true,
-        showSymbol: false,
         areaStyle: {
           opacity: 0.1
         }
@@ -350,7 +399,19 @@ export default {
       }
 
       Object.entries(options).forEach(([type, option]) => {
-        option.value.series[0].data = data[`${type}_data`] || []
+        // 获取原始数据
+        const rawData = data[`${type}_data`] || []
+        
+        // 转换数据格式
+        const formattedData = rawData.map(item => [
+          // 将 ISO 时间字符串转换为时间戳
+          item.timestamp,  // 保持原始 ISO 时间字符串
+          item.value
+        ])
+
+        // 更新图表数据
+        option.value.series[0].data = formattedData
+
         nextTick(() => {
           const chart = charts.value[type]
           if (chart) {

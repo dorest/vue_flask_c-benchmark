@@ -26,6 +26,19 @@ class TestResult(db.Model):
     flamegraph_path = db.Column(db.Text)
     result_dir = db.Column(db.Text)
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'test_case_id': self.test_case_id,
+            'start_time': self.start_time,
+            'end_time': self.end_time,
+            'status': self.status,
+            'perf_data': self.perf_data,
+            'benchmark_data': self.benchmark_data,
+            'flamegraph_path': self.flamegraph_path,
+            'result_dir': self.result_dir
+        }
+
 class ScheduledTask(db.Model):
     __tablename__ = 'scheduled_tasks'
     

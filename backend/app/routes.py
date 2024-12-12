@@ -407,10 +407,13 @@ def update_test_status():
         data = request.get_json()
         test_case_id = data['test_case_id']
         start_timestamp = datetime.fromisoformat(data['start_timestamp'])
-                # 打印收到的时间戳
-        current_app.logger.info(f"Received start_timestamp: {start_timestamp}")
+        perf_data = data.get('perf_data')  # 新增：获取性能数据
         
-                # 查找对应时间戳的测试结果
+        current_app.logger.info(f"Received start_timestamp: {start_timestamp}")
+        if perf_data:
+            current_app.logger.info("Received performance data")
+        
+        # 查找对应时间戳的测试结果
         results = TestResult.query.filter(
             TestResult.test_case_id == test_case_id,
             TestResult.status == 'running'
@@ -428,7 +431,7 @@ def update_test_status():
         # 查找对应时间戳的测试结果
         result = TestResult.query.filter(
             TestResult.test_case_id == test_case_id,
-            TestResult.start_time >= start_timestamp - timedelta(seconds=5),  # 给个5秒的容差
+            TestResult.start_time >= start_timestamp - timedelta(seconds=5),
             TestResult.start_time <= start_timestamp + timedelta(seconds=5),
             TestResult.status == 'running'
         ).order_by(TestResult.start_time.desc()).first()
@@ -442,15 +445,22 @@ def update_test_status():
             result.status = data['status']
             if data.get('end_time'):
                 result.end_time = datetime.fromisoformat(data['end_time'])
+            if perf_data:  # 新增：更新性能数据
+                result.perf_data = perf_data
+                current_app.logger.info(f"Updated performance data for test {result.id}")
             
             db.session.commit()
             
-            # 通知所有客户端状态更新
-            notify_clients({
+            # 通知所有客户端状态更新，包含性能数据
+            notify_data = {
                 'test_id': result.id,
                 'status': result.status,
                 'end_time': result.end_time.isoformat() if result.end_time else None
-            })
+            }
+            if perf_data:
+                notify_data['perf_data'] = perf_data
+            
+            notify_clients(notify_data)
             
             return jsonify({
                 'code': 200,
@@ -464,6 +474,7 @@ def update_test_status():
             
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"Error updating test status: {str(e)}")
         return jsonify({
             'code': 500,
             'message': str(e)
