@@ -231,10 +231,16 @@ class TestServer:
         """收集性能指标"""
         perf_data = {
             'cpu_data': [],
-            'memory_data': []
+            'memory_data': [],
+            'disk_io_data': [],  # 新增：磁盘 I/O 数据
+            'network_io_data': []  # 新增：网络 I/O 数据
         }
         
         perf_file = os.path.join(result_dir, 'performance.json')
+        
+        # 初始化 I/O 计数器
+        disk_io_start = psutil.disk_io_counters()
+        net_io_start = psutil.net_io_counters()
         
         while self.test_status.get(test_id) == 'running':
             timestamp = datetime.now().isoformat()
@@ -251,6 +257,22 @@ class TestServer:
             perf_data['memory_data'].append({
                 'timestamp': timestamp,
                 'value': memory.percent
+            })
+            
+            # 收集磁盘 I/O 使用情况
+            disk_io = psutil.disk_io_counters()
+            perf_data['disk_io_data'].append({
+                'timestamp': timestamp,
+                'read_bytes': disk_io.read_bytes - disk_io_start.read_bytes,
+                'write_bytes': disk_io.write_bytes - disk_io_start.write_bytes
+            })
+            
+            # 收集网络 I/O 使用情况
+            net_io = psutil.net_io_counters()
+            perf_data['network_io_data'].append({
+                'timestamp': timestamp,
+                'bytes_sent': net_io.bytes_sent - net_io_start.bytes_sent,
+                'bytes_recv': net_io.bytes_recv - net_io_start.bytes_recv
             })
             
             # 实时保存性能数据到文件

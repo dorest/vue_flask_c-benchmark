@@ -259,7 +259,9 @@ def get_test_result_details(id):
             'data': {
                 'cpu_data': perf_data.get('cpu_data', []),
                 'memory_data': perf_data.get('memory_data', []),
-                'response_time_data': perf_data.get('response_time_data', []),
+
+                'disk_io_data': perf_data.get('disk_io_data', []),
+                'network_io_data': perf_data.get('network_io_data', []),
                 'benchmark_data': [
                     {
                         'metric': 'CPU平均使用率',
@@ -272,13 +274,8 @@ def get_test_result_details(id):
                         'current': calculate_average(perf_data.get('memory_data', [])),
                         'baseline': 500,
                         'diff': calculate_diff(calculate_average(perf_data.get('memory_data', [])), 500)
-                    },
-                    {
-                        'metric': '平均响应时间',
-                        'current': calculate_average(perf_data.get('response_time_data', [])),
-                        'baseline': 100,
-                        'diff': calculate_diff(calculate_average(perf_data.get('response_time_data', [])), 100)
                     }
+
                 ],
                 'logs': logs,  # 添加日志到详情中
                 'flamegraph_path': result.flamegraph_path
@@ -295,7 +292,8 @@ def get_test_result_details(id):
             'data': {
                 'cpu_data': [],
                 'memory_data': [],
-                'response_time_data': [],
+                'disk_io_data': [],
+                'network_io_data': [],
                 'benchmark_data': [],
                 'logs': [],
                 'flamegraph_path': None

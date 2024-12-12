@@ -84,7 +84,8 @@ export default {
           data: {
             cpu_data: response.data.data?.cpu_data || [],
             memory_data: response.data.data?.memory_data || [],
-            response_time_data: response.data.data?.response_time_data || [],
+            disk_io_data: response.data.data?.disk_io_data || [],
+            network_io_data: response.data.data?.network_io_data || [],
             benchmark_data: response.data.data?.benchmark_data || [],
             logs: response.data.data?.logs || [],
             flamegraph_path: response.data.data?.flamegraph_path,

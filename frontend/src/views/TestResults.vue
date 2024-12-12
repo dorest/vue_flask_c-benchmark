@@ -81,16 +81,29 @@
                 />
               </div>
             </div>
-            <!-- 响应时间图表 -->
+            <!-- 磁盘IO图表 -->
             <div class="chart-wrapper">
-              <h3>响应时间分布</h3>
+              <h3>磁盘 I/O</h3>
               <div class="chart-container">
                 <v-chart 
                   class="chart"
-                  ref="responseTimeChart"
-                  :option="responseTimeChartOption"
+                  ref="diskIoChart"
+                  :option="diskIoChartOption"
                   autoresize
-                  @mounted="handleChartMounted('responseTime')"
+                  @mounted="handleChartMounted('diskIo')"
+                />
+              </div>
+            </div>
+            <!-- 网络IO图表 -->
+            <div class="chart-wrapper">
+              <h3>网络 I/O</h3>
+              <div class="chart-container">
+                <v-chart 
+                  class="chart"
+                  ref="networkIoChart"
+                  :option="networkIoChartOption"
+                  autoresize
+                  @mounted="handleChartMounted('networkIo')"
                 />
               </div>
             </div>
@@ -158,7 +171,8 @@ export default {
     const charts = ref({
       cpu: null,
       memory: null,
-      responseTime: null
+      disk_io: null,
+      network_io: null
     })
     // 图表配置
     const cpuChartOption = ref({
@@ -287,37 +301,151 @@ export default {
       }]
     })
 
-
-    const responseTimeChartOption = ref({
+    const diskIoChartOption = ref({
       title: { 
-        text: '响应时间分布',
+        text: '磁盘 I/O 趋势',
         textStyle: {
           fontSize: 14
         }
       },
       tooltip: { 
         trigger: 'axis',
-        formatter: '{b}ms<br/>{a}: {c}次'
+        formatter: function(params) {
+          const date = new Date(params[0].data[0])
+          return `${date.toLocaleString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+          })}<br/>读取: ${(params[0].data[1]).toFixed(2)} MB/s
+            <br/>写入: ${(params[1].data[1]).toFixed(2)} MB/s`
+        }
+      },
+      legend: {
+        data: ['读取', '写入']
       },
       grid: {
         left: '3%',
         right: '4%',
         bottom: '3%',
+        top: '60px',
         containLabel: true
       },
       xAxis: { 
-        type: 'category',
-        name: '响应时间(ms)'
+        type: 'time',
+        axisLabel: {
+          formatter: function(value) {
+            const date = new Date(value)
+            return date.toLocaleTimeString('zh-CN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false
+            })
+          },
+          hideOverlap: true
+        }
       },
       yAxis: { 
         type: 'value',
-        name: '次数'
+        name: 'MB/s',
+        splitLine: {
+          show: true
+        }
       },
       series: [{
-        name: '响应时间',
-        type: 'bar',  // 改用柱状图更适合展示分布
+        name: '读取',
+        type: 'line',
+        showSymbol: false,
         data: [],
-        barWidth: '60%'
+        smooth: true,
+        areaStyle: {
+          opacity: 0.1
+        }
+      },
+      {
+        name: '写入',
+        type: 'line',
+        showSymbol: false,
+        data: [],
+        smooth: true,
+        areaStyle: {
+          opacity: 0.1
+        }
+      }]
+    })
+
+    const networkIoChartOption = ref({
+      title: { 
+        text: '网络 I/O 趋势',
+        textStyle: {
+          fontSize: 14
+        }
+      },
+      tooltip: { 
+        trigger: 'axis',
+        formatter: function(params) {
+          const date = new Date(params[0].data[0])
+          return `${date.toLocaleString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+          })}<br/>发送: ${(params[0].data[1]).toFixed(2)} MB/s
+            <br/>接收: ${(params[1].data[1]).toFixed(2)} MB/s`
+        }
+      },
+      legend: {
+        data: ['发送', '接收']
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '3%',
+        top: '60px',
+        containLabel: true
+      },
+      xAxis: { 
+        type: 'time',
+        axisLabel: {
+          formatter: function(value) {
+            const date = new Date(value)
+            return date.toLocaleTimeString('zh-CN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false
+            })
+          },
+          hideOverlap: true
+        }
+      },
+      yAxis: { 
+        type: 'value',
+        name: 'MB/s',
+        splitLine: {
+          show: true
+        }
+      },
+      series: [{
+        name: '发送',
+        type: 'line',
+        showSymbol: false,
+        data: [],
+        smooth: true,
+        areaStyle: {
+          opacity: 0.1
+        }
+      },
+      {
+        name: '接收',
+        type: 'line',
+        showSymbol: false,
+        data: [],
+        smooth: true,
+        areaStyle: {
+          opacity: 0.1
+        }
       }]
     })
 
@@ -350,7 +478,8 @@ export default {
     const chartRefs = ref({
       cpu: null,
       memory: null,
-      responseTime: null
+      disk_io: null,
+      network_io: null
     })
 
     // 修改 showDetails 函数
@@ -395,22 +524,48 @@ export default {
       const options = {
         cpu: cpuChartOption,
         memory: memoryChartOption,
-        responseTime: responseTimeChartOption
+        disk_io: diskIoChartOption,
+        network_io: networkIoChartOption
       }
+      console.log(data)
 
       Object.entries(options).forEach(([type, option]) => {
-        // 获取原始数据
         const rawData = data[`${type}_data`] || []
+        console.log(type)
+        console.log(rawData)
         
-        // 转换数据格式
-        const formattedData = rawData.map(item => [
-          // 将 ISO 时间字符串转换为时间戳
-          item.timestamp,  // 保持原始 ISO 时间字符串
-          item.value
-        ])
-
-        // 更新图表数据
-        option.value.series[0].data = formattedData
+        if (type === 'disk_io') {
+          // 处理磁盘IO数据
+          const readData = rawData.map(item => [
+            item.timestamp,
+            item.read_bytes  / (1024 * 1024)
+          ])
+          const writeData = rawData.map(item => [
+            item.timestamp,
+            item.write_bytes  / (1024 * 1024)
+          ])
+          option.value.series[0].data = readData
+          option.value.series[1].data = writeData
+        } else if (type === 'network_io') {
+          // 处理网络IO数据
+          const sentData = rawData.map(item => [
+            item.timestamp,
+            item.bytes_sent  / (1024 * 1024)
+          ])
+          const recvData = rawData.map(item => [
+            item.timestamp,
+            item.bytes_recv  / (1024 * 1024)
+          ])
+          option.value.series[0].data = sentData
+          option.value.series[1].data = recvData
+        } else {
+          // 处理 CPU 和内存数据
+          const formattedData = rawData.map(item => [
+            item.timestamp,
+            item.value
+          ])
+          option.value.series[0].data = formattedData
+        }
 
         nextTick(() => {
           const chart = charts.value[type]
@@ -464,7 +619,7 @@ export default {
       }
     }
 
-    // 获取日志样式
+    // 获取日志样���
     const getLogClass = (log) => {
       if (log.includes('[STDERR]')) {
         return 'log-error'
@@ -609,7 +764,8 @@ export default {
       charts.value = {
         cpu: null,
         memory: null,
-        responseTime: null
+        diskIo: null,
+        networkIo: null
       }
     }
 
@@ -623,7 +779,8 @@ export default {
       currentFlameGraphUrl,
       cpuChartOption,
       memoryChartOption,
-      responseTimeChartOption,
+      diskIoChartOption,
+      networkIoChartOption,
       benchmarkData, 
       showDetails,
       showFlameGraph,
@@ -661,6 +818,7 @@ export default {
   grid-template-columns: repeat(2, 1fr);
   gap: 20px;
   margin-bottom: 20px;
+  width: 100%;
 }
 
 .chart-wrapper {
