@@ -52,7 +52,9 @@ def create_test_case():
             'description': case.description,
             'command': case.command,
             'parameters': case.parameters,
-            'created_at': case.created_at.isoformat() if case.created_at else None
+            'created_at': case.created_at.isoformat() if case.created_at else None,
+            'enable_profiling': case.enable_profiling,
+            'profiling_config': case.profiling_config
         } for case in cases])
         
     elif request.method == 'POST':
@@ -61,7 +63,9 @@ def create_test_case():
             name=data['name'],
             description=data.get('description'),
             command=data['command'],
-            parameters=data.get('parameters', {})
+            parameters=data.get('parameters', {}),
+            enable_profiling=data.get('enable_profiling', False),
+            profiling_config=data.get('profiling_config', {})
         )
         db.session.add(test_case)
         db.session.commit()
@@ -72,7 +76,9 @@ def create_test_case():
             'command': test_case.command,
             'parameters': test_case.parameters,
             'created_at': test_case.created_at.isoformat(),
-            'message': '创建成功'
+            'message': '创建成功',
+            'enable_profiling': test_case.enable_profiling,
+            'profiling_config': test_case.profiling_config
         }), 201
 
 
@@ -164,6 +170,8 @@ def update_test_case(id):
         test_case.description = data.get('description', test_case.description)
         test_case.command = data.get('command', test_case.command)
         test_case.parameters = data.get('parameters', test_case.parameters)
+        test_case.enable_profiling = data.get('enable_profiling', test_case.enable_profiling)
+        test_case.profiling_config = data.get('profiling_config', test_case.profiling_config)
         
         db.session.commit()
         
@@ -173,7 +181,9 @@ def update_test_case(id):
             'description': test_case.description,
             'command': test_case.command,
             'parameters': test_case.parameters,
-            'message': '更新成功'
+            'message': '更新成功',
+            'enable_profiling': test_case.enable_profiling,
+            'profiling_config': test_case.profiling_config
         })
     except Exception as e:
         db.session.rollback()
@@ -311,7 +321,9 @@ def execute_test_case(id):
         
         response = test_client.execute_test(
             test_id=id,
-            command=test_case.command
+            command=test_case.command,
+            enable_profiling=test_case.enable_profiling,
+            profiling_config=test_case.profiling_config
         )
         
         if 'error' in response:
@@ -325,7 +337,8 @@ def execute_test_case(id):
             test_case_id=id,
             start_time=datetime.now(),
             status='running',
-            result_dir=response['result_dir']
+            result_dir=response['result_dir'],
+            has_profile = test_case.enable_profiling
         )
         db.session.add(result)
         db.session.commit()
@@ -384,7 +397,7 @@ def delete_test_result(id):
             import shutil
             shutil.rmtree(result.result_dir)
         
-        # 删除数据库记录
+        # 删除��据库记录
         db.session.delete(result)
         db.session.commit()
         
@@ -490,3 +503,36 @@ def calculate_diff(current, baseline):
     if baseline == 0:
         return 0
     return ((current - baseline) / baseline) * 100
+
+@api_bp.route('/test-results/<int:result_id>/profile', methods=['GET'])
+def get_test_profile(result_id):
+    """获取测试的性能分析数据"""
+    try:
+        result = TestResult.query.get_or_404(result_id)
+        # 将宿主机路径转换为容器内路径
+        # 从 /root/flask-vue/performance-tests/results/... 
+        # 转换为 /usr/src/app/performance-tests/results/...
+        container_path = result.result_dir.replace(
+            '/root/flask-vue', 
+            '/usr/src/app'
+        )
+        
+        result_dir = os.path.join(container_path, 'profile')
+        
+        profile_data = {
+            'result_dir': result_dir,
+            'has_profile': os.path.exists(result_dir),
+            'profile_results': {}
+        }
+        current_app.logger.info(f"==========profiling_dir: {result_dir}===========")
+        
+        if os.path.exists(result_dir):
+            # 读取性能分析结果
+            results_file = os.path.join(result_dir, 'profiling_results.json')
+            if os.path.exists(results_file):
+                with open(results_file, 'r') as f:
+                    profile_data['profile_results'] = json.load(f)
+        
+        return jsonify(profile_data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

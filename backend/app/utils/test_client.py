@@ -18,13 +18,15 @@ class TestClient:
         self.max_retries = max_retries
         logger.info(f"TestClient initialized with host={host}, port={port}")
     
-    def execute_test(self, test_id, command):
+    def execute_test(self, test_id, command, enable_profiling, profiling_config):
         """执行测试用例"""
         logger.debug(f"Executing test {test_id} with command: {command}")
         return self._send_request({
             'action': 'execute_test',
             'test_id': test_id,
-            'command': command
+            'command': command,
+            'enable_profiling': enable_profiling,
+            'profiling_config': profiling_config
         })
     
     def get_logs(self, test_id):

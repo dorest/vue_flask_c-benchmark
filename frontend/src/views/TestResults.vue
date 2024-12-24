@@ -138,6 +138,62 @@
             <pre v-for="(log, index) in testLogs" :key="index" :class="getLogClass(log)">{{ log }}</pre>
           </div>
         </el-tab-pane>
+        
+        <!-- 新增性能分析标签页 -->
+        <el-tab-pane label="性能分析" name="profiling" v-if="hasProfileData">
+          <div class="profiling-container">
+            <!-- CPU Profile -->
+            <div class="profile-section">
+              <h3>CPU Profile</h3>
+              <div class="profile-content">
+                <div class="svg-container" v-if="profileData?.perf">
+                  <object
+                    :data="getContainerPath(profileData?.perf)" 
+                    type="image/svg+xml"
+                    class="flame-graph"
+                  ></object>
+                </div>
+                <div class="no-data" v-else>暂无 CPU Profile 数据</div>
+              </div>
+            </div>
+
+            <!-- 调用图分析 -->
+            <div class="profile-section">
+              <h3>调用关系图</h3>
+              <div class="profile-content">
+                <div class="svg-container" v-if="profileData?.callgrind">
+                  <object 
+                    :data="getContainerPath(profileData?.callgrind)" 
+                    type="image/svg+xml"
+                    class="flame-graph"
+                  ></object>
+                </div>
+                <div class="no-data" v-else>暂无调用图数据</div>
+              </div>
+            </div>
+
+            <!-- 内存分析 -->
+            <div class="profile-section">
+              <h3>内存分析</h3>
+              <div class="profile-content">
+                <el-tabs v-model="memoryActiveTab">
+                  <el-tab-pane label="内存泄漏报告" name="leaks">
+                    <div class="valgrind-output" v-if="profileData.valgrind">
+                      <pre>{{ profileData.valgrind }}</pre>
+                    </div>
+                    <div class="no-data" v-else>暂无内存泄漏数据</div>
+                  </el-tab-pane>
+                  <el-tab-pane label="堆内存分析" name="heap">
+                    <div class="svg-container" v-if="profileData.heap">
+                      <object :data="profileData.heap" type="image/svg+xml"></object>
+                    </div>
+                    <div class="no-data" v-else>暂无堆内存分析数据</div>
+                  </el-tab-pane>
+                </el-tabs>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </el-dialog>
   </div>
@@ -168,6 +224,9 @@ export default {
     const testLogs = ref([])
     const logPollingInterval = ref(null)
     const activeTab = ref('charts')
+    const hasProfileData = ref(false)
+    const profileData = ref({})
+    const memoryActiveTab = ref('leaks')
     const charts = ref({
       cpu: null,
       memory: null,
@@ -485,11 +544,23 @@ export default {
     // 修改 showDetails 函数
     const showDetails = async (result) => {
       try {
-        const response = await api.getTestResultDetails(result.id)
-        updateCharts(response.data)
-        currentFlameGraphUrl.value = response.data.flamegraph_path
-        testLogs.value = response.data.logs || []
-        activeTab.value = 'charts' // 重置为默认tab
+        const [resultDetails, profileDetails] = await Promise.all([
+          api.getTestResultDetails(result.id),
+          api.getTestProfile(result.id)
+        ])
+        console.log(profileDetails.data)
+        console.log(resultDetails.data)
+        // 处理常规测试结果
+        updateCharts(resultDetails.data)
+        testLogs.value = resultDetails.data.logs || []
+        
+        // 处理性能分析数据
+        hasProfileData.value = profileDetails.data.has_profile
+        if (hasProfileData.value) {
+          profileData.value = profileDetails.data.profile_results.command_1
+        }
+
+        activeTab.value = 'charts'
         detailsVisible.value = true
         
         // 在下一个 tick 更新图表
@@ -579,12 +650,6 @@ export default {
       benchmarkData.value = data.benchmark_data || []
     }
 
-    // 显示火焰图
-    const showFlameGraph = (result) => {
-      currentFlameGraphUrl.value = result.flamegraph_path
-      flameGraphVisible.value = true
-    }
-
     // 导出报告
     const exportReport = async (result) => {
       try {
@@ -619,7 +684,7 @@ export default {
       }
     }
 
-    // 获取日志样���
+    // 获取日志样式
     const getLogClass = (log) => {
       if (log.includes('[STDERR]')) {
         return 'log-error'
@@ -656,7 +721,7 @@ export default {
             // 如果测试已完成，停止轮询并刷新数据
             if (newStatus && newStatus !== 'running') {
               stopLogPolling()
-              await loadTestResults() // 重新加载列表以获取完整数据
+              await loadTestResults() // 重新加载列表以获��完整数据
             }
           }
         }
@@ -768,6 +833,16 @@ export default {
         networkIo: null
       }
     }
+    // 添加路径转换方法
+    const getContainerPath = (path) => {
+      if (!path) return '';
+      // 将宿主机路径转换为容器路径
+      return path.replace(
+        '/root/flask-vue/performance-tests',
+        '/performance-tests'
+      );
+    };
+
 
     return {
       testResults,
@@ -783,7 +858,6 @@ export default {
       networkIoChartOption,
       benchmarkData, 
       showDetails,
-      showFlameGraph,
       exportReport,
       formatTime,
       getStatusType,
@@ -796,6 +870,10 @@ export default {
       activeTab,
       handleChartMounted,
       handleDialogClose,
+      hasProfileData,
+      profileData,
+      memoryActiveTab,
+      getContainerPath
     }
   }
 }
@@ -898,5 +976,77 @@ export default {
   text-align: center;
   padding: 20px;
   color: #909399;
+}
+
+.profiling-container {
+  padding: 20px;
+}
+
+.profile-section {
+  margin-bottom: 30px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1);
+}
+
+.profile-section h3 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  font-size: 16px;
+  color: #303133;
+}
+
+.profile-content {
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.svg-container {
+  width: 100%;
+  height: 500px;
+  overflow: auto;
+}
+
+.svg-container object {
+  width: 100%;
+  height: 100%;
+}
+
+.valgrind-output {
+  max-height: 500px;
+  overflow-y: auto;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 15px;
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.valgrind-output pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+
+.flame-graph {
+  width: 100%;
+  height: 100%;
+}
+
+/* 确保 SVG 内容可以正确缩放 */
+:deep(.flame-graph svg) {
+  width: 100%;
+  height: 100%;
+}
+
+.no-data {
+  padding: 40px;
+  text-align: center;
+  color: #909399;
+  background: #f5f7fa;
 }
 </style> 

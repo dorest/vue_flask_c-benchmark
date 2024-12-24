@@ -160,5 +160,9 @@ export default {
           }
         }
       })
+  },
+  // 获取性能分析数据
+  getTestProfile(resultId) {
+    return api.get(`/test-results/${resultId}/profile`)
   }
 } 

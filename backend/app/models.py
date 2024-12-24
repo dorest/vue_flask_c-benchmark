@@ -10,7 +10,8 @@ class TestCase(db.Model):
     command = db.Column(db.Text, nullable=False)
     parameters = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+    enable_profiling = db.Column(db.Boolean, default=False)
+    profiling_config = db.Column(db.JSON)
     results = db.relationship('TestResult', backref='test_case', lazy=True)
 
 class TestResult(db.Model):
@@ -25,6 +26,7 @@ class TestResult(db.Model):
     benchmark_data = db.Column(db.JSON)
     flamegraph_path = db.Column(db.Text)
     result_dir = db.Column(db.Text)
+    has_profile = db.Column(db.Boolean, default=False)
 
     def to_dict(self):
         return {

@@ -12,6 +12,13 @@
         <el-table-column prop="name" label="名称" />
         <el-table-column prop="description" label="描述" />
         <el-table-column prop="command" label="命令" />
+        <el-table-column label="性能分析" width="100">
+          <template #default="scope">
+            <el-tag :type="scope.row.enable_profiling ? 'success' : 'info'">
+              {{ scope.row.enable_profiling ? '已启用' : '未启用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="280">
           <template #default="scope">
             <el-button @click="runTest(scope.row)">运行</el-button>
@@ -29,20 +36,87 @@
 
     <!-- 创建测试用例对话框 -->
     <el-dialog v-model="createDialogVisible" :title="isEditing ? '编辑测试用例' : '新建测试用例'" >
-      <el-form :model="newTestCase">
-        <el-form-item label="名称">
+      <el-form :model="newTestCase" :rules="rules" ref="testCaseForm">
+        <el-form-item label="名称" prop="name">
           <el-input v-model="newTestCase.name" />
         </el-form-item>
-        <el-form-item label="描述">
+        
+        <el-form-item label="描述" prop="description">
           <el-input type="textarea" v-model="newTestCase.description" />
         </el-form-item>
-        <el-form-item label="命令">
+        
+        <el-form-item label="命令" prop="command">
           <el-input 
             type="textarea" 
             v-model="newTestCase.command"
             :rows="5"
             placeholder="请输入测试命令，支持多行命令"
           />
+        </el-form-item>
+
+        <!-- 新增性能分析配置部分 -->
+        <el-form-item label="性能分析">
+          <el-switch v-model="newTestCase.enable_profiling" />
+        </el-form-item>
+
+        <el-form-item label="分析工具" v-if="newTestCase.enable_profiling">
+          <el-checkbox-group v-model="newTestCase.profiling_tools">
+            <el-checkbox label="perf">CPU 分析 (perf)</el-checkbox>
+            <el-checkbox label="valgrind">内存分析 (Valgrind)</el-checkbox>
+            <el-checkbox label="callgrind">调用图分析 (Callgrind)</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+
+        <el-form-item 
+          label="采样频率" 
+          v-if="newTestCase.enable_profiling && newTestCase.profiling_tools.includes('perf')"
+        >
+          <el-input-number 
+            v-model="newTestCase.perf_frequency" 
+            :min="1"
+            :max="999"
+            :step="1"
+          />
+          <span class="hint">Hz (每秒采样次数)</span>
+        </el-form-item>
+
+        <el-form-item 
+          label="内存检查级别" 
+          v-if="newTestCase.enable_profiling && newTestCase.profiling_tools.includes('valgrind')"
+        >
+          <el-select v-model="newTestCase.valgrind_level">
+            <el-option label="基础检查" value="basic" />
+            <el-option label="完整检查" value="full" />
+            <el-option label="详细检查" value="extra" />
+          </el-select>
+        </el-form-item>
+          <!-- Callgrind 配置选项 -->
+        <el-form-item 
+          label="Callgrind 配置" 
+          v-if="newTestCase.enable_profiling && newTestCase.profiling_tools.includes('callgrind')"
+        >
+          <div class="callgrind-options">
+            <el-checkbox v-model="newTestCase.callgrind_config.collect_jumps">
+              收集跳转信息
+              <el-tooltip content="记录条件跳转的执行情况" placement="top">
+                <el-icon class="info-icon"><InfoFilled /></el-icon>
+              </el-tooltip>
+            </el-checkbox>
+            
+            <el-checkbox v-model="newTestCase.callgrind_config.collect_systime">
+              收集系统调用时间
+              <el-tooltip content="包含系统调用的执行时间" placement="top">
+                <el-icon class="info-icon"><InfoFilled /></el-icon>
+              </el-tooltip>
+            </el-checkbox>
+            
+            <el-checkbox v-model="newTestCase.callgrind_config.cache_sim">
+              模拟缓存行为
+              <el-tooltip content="模拟 CPU 缓存命中/未命中情况" placement="top">
+                <el-icon class="info-icon"><InfoFilled /></el-icon>
+              </el-tooltip>
+            </el-checkbox>
+                </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -91,7 +165,16 @@ export default {
     const newTestCase = ref({
       name: '',
       description: '',
-      command: ''
+      command: '',
+      enable_profiling: false,
+      profiling_tools: ['perf'],  // 默认选择 perf
+      perf_frequency: 99,         // 默认采样频率
+      valgrind_level: 'full',     // 默认内存检查级别
+      callgrind_config: {         // 新增 callgrind 配置
+        collect_jumps: false,     // 是否收集跳转信息
+        collect_systime: false,   // 是否收集系统调用时间
+        cache_sim: false,         // 是否模拟缓存行为
+      }
     })
     const scheduleDialogVisible = ref(false)
     const scheduleForm = ref({
@@ -102,6 +185,16 @@ export default {
 
     const executingStates = reactive(new Map())
     const router = useRouter()  // 使用 useRouter
+
+    const rules = {
+      name: [
+        { required: true, message: '请输入测试用例名称', trigger: 'blur' },
+        { min: 1, max: 50, message: '长度在 2 到 50 个字符', trigger: 'blur' }
+      ],
+      command: [
+        { required: true, message: '请输入测试命令', trigger: 'blur' }
+      ]
+    }
 
     const fetchTestCases = async () => {
       try {
@@ -118,17 +211,37 @@ export default {
 
     const handleRowDblClick = (row) => {
       isEditing.value = true
-      newTestCase.value = { ...row }
+      newTestCase.value = {
+        ...row,
+        profiling_tools: row.profiling_config?.tools || ['perf'],
+        perf_frequency: row.profiling_config?.perf_frequency || 99,
+        valgrind_level: row.profiling_config?.valgrind_level || 'full',
+        callgrind_config: row.profiling_config?.callgrind_config || {
+          collect_jumps: false,
+          collect_systime: false,
+          cache_sim: false,
+        }
+      }
       createDialogVisible.value = true
     }
 
     const createTestCase = async () => {
       try {
+        const testCaseData = {
+          ...newTestCase.value,
+          profiling_config: {
+            tools: newTestCase.value.profiling_tools,
+            perf_frequency: newTestCase.value.perf_frequency,
+            valgrind_level: newTestCase.value.valgrind_level,
+            callgrind_config: newTestCase.value.callgrind_config
+          }
+        }
+
         if (isEditing.value) {
-          await api.updateTestCase(newTestCase.value.id, newTestCase.value)
+          await api.updateTestCase(testCaseData.id, testCaseData)
           ElMessage.success('更新成功')
         } else {
-          await api.createTestCase(newTestCase.value)
+          await api.createTestCase(testCaseData)
           ElMessage.success('创建成功')
         }
         createDialogVisible.value = false
@@ -176,7 +289,16 @@ export default {
         id: null,
         name: '',
         description: '',
-        command: ''
+        command: '',
+        enable_profiling: false,
+        profiling_tools: ['perf'],
+        perf_frequency: 99,
+        valgrind_level: 'full',
+        callgrind_config: {
+          collect_jumps: false,
+          collect_systime: false,
+          cache_sim: false,
+        }
       }
     }
 
@@ -241,6 +363,7 @@ export default {
       showScheduleDialog,
       createScheduledTask,
       executingStates,
+      rules,
     }
   }
 }
@@ -265,5 +388,21 @@ export default {
   font-size: 12px;
   color: #909399;
   margin-left: 10px;
+}
+
+.hint {
+  margin-left: 8px;
+  color: #909399;
+  font-size: 12px;
+}
+
+.el-checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.el-form-item {
+  margin-bottom: 22px;
 }
 </style> 

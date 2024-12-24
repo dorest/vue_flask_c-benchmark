@@ -31,6 +31,13 @@ class TestServer:
         os.environ['NO_PROXY'] = '*'
         os.environ['no_proxy'] = '*'
         self.perf_data = {}  # 新增：存储性能数据
+        # 新增性能分析相关配置
+        self.profiling_enabled = False  # 是否启用性能分析
+        self.profiling_tools = {
+            'perf': True,      # CPU性能分析
+            'valgrind': True,  # 内存分析
+            'callgrind': True  # 调用图分析
+        }
         
     def setup_logging(self):
         """配置日志记录器"""
@@ -91,48 +98,99 @@ class TestServer:
         except Exception as e:
             self.logger.error(f"Error calling API: {e}", exc_info=True)
             
-    def execute_test(self, test_id, command):
-        """执行测试命令并收集结果"""
+    def execute_test(self, test_id, command, enable_profiling=False, profiling_config=None):
+        """扩展执行测试函数，添加性能分析支持"""
         timestamp = datetime.now()
         self.logger.info(f"Starting test execution for test case: {test_id} at {timestamp}")
         
         result_dir = os.path.join(self.base_dir, 'results', 
                                  f"{timestamp.strftime('%Y%m%d_%H%M%S')}_{test_id}")
         os.makedirs(result_dir, exist_ok=True)
-
         
-        # 创建日志队列
+        # 创建性能分析目录
+        profile_dir = os.path.join(result_dir, 'profile')
+        os.makedirs(profile_dir, exist_ok=True)
+
+        # 保持原有的日志队列设置
         log_queue = queue.Queue()
         self.test_logs[test_id] = log_queue
         self.test_status[test_id] = 'running'
-        
+
         def log_message(msg):
-            """记录日志到文件和队列"""
+            """保持原有的日志记录功能"""
             log_queue.put(msg)
             with open(f"{result_dir}/output.log", 'a') as f:
                 f.write(f"{msg}\n")
-        
+
+        def run_profiling(cmd):
+            """执行性能分析"""
+            profiling_results = {}
+            
+            if enable_profiling:
+                try:
+                    # 1. perf 分析
+                    if self.profiling_tools['perf']:
+                        perf_data = os.path.join(profile_dir, 'perf.data')
+                        perf_cmd = f"perf record -F 99 -g -o {perf_data} -- {cmd}"
+                        subprocess.run(perf_cmd, shell=True, check=True)
+                        
+                        # 生成火焰图
+                        subprocess.run(f"perf script -i {perf_data} > {profile_dir}/perf.script", shell=True)
+                        subprocess.run(f"/root/FlameGraph/stackcollapse-perf.pl {profile_dir}/perf.script > {profile_dir}/perf.folded", shell=True)
+                        subprocess.run(f"/root/FlameGraph/flamegraph.pl {profile_dir}/perf.folded > {profile_dir}/flamegraph.svg", shell=True)
+                        profiling_results['perf'] = f"{profile_dir}/flamegraph.svg" 
+
+                    # 2. Valgrind 内存分析
+                    if self.profiling_tools['valgrind']:
+                        valgrind_log = os.path.join(profile_dir, 'valgrind.log')
+                        valgrind_cmd = f"valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --log-file={valgrind_log} {cmd}"
+                        subprocess.run(valgrind_cmd, shell=True, check=True)
+                        profiling_results['valgrind'] = valgrind_log
+
+                    # 3. Callgrind 调用图分析
+                    if self.profiling_tools['callgrind']:
+                        callgrind_out = os.path.join(profile_dir, 'callgrind.out')
+                        callgrind_cmd = f"valgrind --tool=callgrind --callgrind-out-file={callgrind_out} {cmd}"
+                        subprocess.run(callgrind_cmd, shell=True, check=True)
+                        
+                        # 生成调用图可视化
+                        subprocess.run(f"gprof2dot -f callgrind {callgrind_out} | dot -Tsvg -o {profile_dir}/callgrind.svg", shell=True)
+                        profiling_results['callgrind'] = f"{profile_dir}/callgrind.svg"
+
+                except Exception as e:
+                    log_message(f"Profiling error: {str(e)}")
+                    
+            return profiling_results
+
         def run_test():
             try:
-                # 启动性能监控线程
+                # 保持原有的性能监控线程
                 monitor_thread = threading.Thread(
                     target=self.collect_performance_metrics,
                     args=(test_id, result_dir)
                 )
                 monitor_thread.daemon = True
                 monitor_thread.start()
-                
+
                 log_message(f"Test started at: {datetime.now()}")
                 log_message(f"Commands to execute:\n{command}")
-                
+
                 commands = command.split('\n')
+                profiling_results = {}
+
                 for i, cmd in enumerate(commands, 1):
                     cmd = cmd.strip()
                     if not cmd:
                         continue
-                        
+
                     log_message(f"\nExecuting command {i}: {cmd}")
                     
+                    # 执行性能分析
+                    if enable_profiling:
+                        prof_results = run_profiling(cmd)
+                        profiling_results[f"command_{i}"] = prof_results
+                    
+                    # 保持原有的命令执行逻辑
                     process = subprocess.Popen(
                         cmd,
                         shell=True,
@@ -143,7 +201,7 @@ class TestServer:
                         universal_newlines=True
                     )
                     
-                    # 实时读取输出
+                    # 保持原有的输出处理逻辑
                     while True:
                         stdout_line = process.stdout.readline()
                         stderr_line = process.stderr.readline()
@@ -158,13 +216,24 @@ class TestServer:
                     
                     if process.returncode != 0:
                         raise Exception(f"Command failed with exit code {process.returncode}")
-                
+
+                # 保存性能分析结果
+                if profiling_results:
+                    with open(os.path.join(profile_dir, 'profiling_results.json'), 'w') as f:
+                        json.dump(profiling_results, f)
+
                 log_message(f"\nTest completed successfully at: {datetime.now()}")
                 self.test_status[test_id] = 'success'
                 
                 # 等待性能监控线程结束
                 monitor_thread.join(timeout=5)
-                self.update_test_status(test_id, timestamp, 'success', datetime.now(), self.perf_data.get(test_id))
+                
+                # 更新测试状态时包含性能分析结果
+                perf_data = self.perf_data.get(test_id, {})
+                if profiling_results:
+                    perf_data['profiling'] = profiling_results
+                print(f"=============perf_data: {perf_data}==============")
+                self.update_test_status(test_id, timestamp, 'success', datetime.now(), perf_data)
                 
             except Exception as e:
                 error_msg = str(e)
@@ -173,20 +242,19 @@ class TestServer:
                 self.test_status[test_id] = 'failed'
                 self.update_test_status(test_id, timestamp, 'failed', datetime.now(), self.perf_data.get(test_id))
             finally:
-                # 测试完成后清理日志队列
                 if test_id in self.test_logs:
-                    del self.test_logs[test_id] 
-        
+                    del self.test_logs[test_id]
+
         # 启动测试线程
         thread = threading.Thread(target=run_test)
         thread.daemon = True
         thread.start()
         
-        # 返回初始响应
         return {
             'status': 'running',
             'result_dir': result_dir,
-            'timestamp': timestamp.isoformat()
+            'timestamp': timestamp.isoformat(),
+            'profiling_enabled': enable_profiling
         }
     
     def get_test_logs(self, test_id):
@@ -299,7 +367,9 @@ class TestServer:
                         # 执行测试
                         result = self.execute_test(
                             request['test_id'],
-                            request['command']
+                            request['command'],
+                            request['enable_profiling'],
+                            request['profiling_config']
                         )
                         conn.sendall(json.dumps(result).encode())
                         
