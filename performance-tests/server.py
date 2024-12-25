@@ -25,7 +25,7 @@ class TestServer:
         # 存储每个测试的日志队列和状态
         self.test_logs = {}
         self.test_status = {}
-        self.api_url = 'http://172.18.0.2:5000'  # 根据实际情况修改,docker inspect flask_app 查看下ip
+        self.api_url = 'http://172.18.0.4:5000'  # 根据实际情况修改,docker inspect flask_app 查看下ip
         self.test_timestamps = {}  # 存储 test_case_id 对应的启动时间
         # 禁用代理设置
         os.environ['NO_PROXY'] = '*'
@@ -138,7 +138,26 @@ class TestServer:
                         subprocess.run(f"perf script -i {perf_data} > {profile_dir}/perf.script", shell=True)
                         subprocess.run(f"/root/FlameGraph/stackcollapse-perf.pl {profile_dir}/perf.script > {profile_dir}/perf.folded", shell=True)
                         subprocess.run(f"/root/FlameGraph/flamegraph.pl {profile_dir}/perf.folded > {profile_dir}/flamegraph.svg", shell=True)
-                        profiling_results['perf'] = f"{profile_dir}/flamegraph.svg" 
+                        
+                        # 生成 perf report 输出
+                        subprocess.run(f"perf report -i {perf_data} > {profile_dir}/perf_report.txt", shell=True)
+                        
+                        # 生成 perf stat 输出
+                        subprocess.run(f"perf stat -a -g -i {perf_data} > {profile_dir}/perf_stat.txt", shell=True)
+                        
+                        # 生成 perf annotate 输出
+                        subprocess.run(f"perf annotate -i {perf_data} > {profile_dir}/perf_annotate.txt", shell=True)
+                        
+                        # 收集所有性能分析结果的路径
+                        profiling_results['perf'] = {
+                            'flamegraph': f"{profile_dir}/flamegraph.svg",
+                            'report': f"{profile_dir}/perf_report.txt",
+                            'stat': f"{profile_dir}/perf_stat.txt",
+                            'annotate': f"{profile_dir}/perf_annotate.txt",
+                            'raw_data': perf_data,
+                            'script': f"{profile_dir}/perf.script",
+                            'folded': f"{profile_dir}/perf.folded"
+                        }
 
                     # 2. Valgrind 内存分析
                     if self.profiling_tools['valgrind']:

@@ -126,12 +126,12 @@
           </div>
         </el-tab-pane>
         
-        <el-tab-pane label="火焰图">
+        <!-- <el-tab-pane label="火焰图">
           <div class="flame-graph-container">
             <img :src="currentFlameGraphUrl" alt="Flame Graph" v-if="currentFlameGraphUrl" />
             <div v-else class="no-data">暂无火焰图数据</div>
           </div>
-        </el-tab-pane>
+        </el-tab-pane> -->
         
         <el-tab-pane label="控制台输出">
           <div class="console-output">
@@ -146,6 +146,50 @@
             <div class="profile-section">
               <h3>CPU Profile</h3>
               <div class="profile-content">
+                <el-tabs v-model="cpuProfileTab">
+                  <el-tab-pane label="火焰图" name="flamegraph">
+                    <div class="svg-container" v-if="profileData?.perf.flamegraph">
+                      <object
+                        :data="getContainerPath(profileData?.perf.flamegraph)" 
+                        type="image/svg+xml"
+                        class="flame-graph"
+                      ></object>
+                    </div>
+                    <div v-else class="no-data">暂无火焰图数据</div>
+                  </el-tab-pane>
+                  <el-tab-pane label="perf report" name="perfreport">
+                    <div class="profile-content">
+                      <iframe
+                        v-if="profileData?.perf.report"
+                        :src="getContainerPath(profileData.perf.report)"
+                        class="perf-text-frame"
+                      ></iframe>
+                      <div v-else class="no-data">暂无report数据</div>
+                    </div>
+                  </el-tab-pane>
+                  <el-tab-pane label="perf stat" name="perfstat">
+                    <div class="profile-content">
+                      <iframe
+                        v-if="profileData?.perf.stat"
+                        :src="getContainerPath(profileData.perf.stat)"
+                        class="perf-text-frame"
+                      ></iframe>
+                      <div v-else class="no-data">暂无stat数据</div>
+                    </div>
+                  </el-tab-pane>
+                  <el-tab-pane label="perf annotate" name="annotate">
+                    <div class="profile-content">
+                      <iframe
+                        v-if="profileData?.perf.annotate"
+                        :src="getContainerPath(profileData.perf.annotate)"
+                        class="perf-text-frame"
+                      ></iframe>
+                      <div v-else class="no-data">暂无annotate数据</div>
+                    </div>
+                  </el-tab-pane>
+                </el-tabs>
+              </div>
+              <!-- <div class="profile-content">
                 <div class="svg-container" v-if="profileData?.perf">
                   <object
                     :data="getContainerPath(profileData?.perf)" 
@@ -154,7 +198,7 @@
                   ></object>
                 </div>
                 <div class="no-data" v-else>暂无 CPU Profile 数据</div>
-              </div>
+              </div> -->
             </div>
 
             <!-- 调用图分析 -->
@@ -178,14 +222,18 @@
               <div class="profile-content">
                 <el-tabs v-model="memoryActiveTab">
                   <el-tab-pane label="内存泄漏报告" name="leaks">
-                    <div class="valgrind-output" v-if="profileData.valgrind">
-                      <pre>{{ profileData.valgrind }}</pre>
+                    <div class="profile-content">
+                      <iframe
+                        v-if="profileData.valgrind"
+                        :src="getContainerPath(profileData.valgrind)"
+                        class="perf-text-frame"
+                      ></iframe>
+                      <div v-else class="no-data">暂无内存泄漏数据</div>
                     </div>
-                    <div class="no-data" v-else>暂无内存泄漏数据</div>
                   </el-tab-pane>
                   <el-tab-pane label="堆内存分析" name="heap">
                     <div class="svg-container" v-if="profileData.heap">
-                      <object :data="profileData.heap" type="image/svg+xml"></object>
+                      <object :data="getContainerPath(profileData.heap)" type="image/svg+xml"></object>
                     </div>
                     <div class="no-data" v-else>暂无堆内存分析数据</div>
                   </el-tab-pane>
@@ -227,6 +275,7 @@ export default {
     const hasProfileData = ref(false)
     const profileData = ref({})
     const memoryActiveTab = ref('leaks')
+    const cpuProfileTab = ref('flamegraph')
     const charts = ref({
       cpu: null,
       memory: null,
@@ -873,6 +922,7 @@ export default {
       hasProfileData,
       profileData,
       memoryActiveTab,
+      cpuProfileTab,
       getContainerPath
     }
   }
@@ -1041,6 +1091,13 @@ export default {
 :deep(.flame-graph svg) {
   width: 100%;
   height: 100%;
+}
+
+.perf-text-frame {
+  width: 100%;
+  height: 600px;
+  border: none;
+  background: #f8f9fa;
 }
 
 .no-data {
