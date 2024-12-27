@@ -148,14 +148,23 @@
               <div class="profile-content">
                 <el-tabs v-model="cpuProfileTab">
                   <el-tab-pane label="火焰图" name="flamegraph">
-                    <div class="svg-container" v-if="profileData?.perf.flamegraph">
-                      <object
-                        :data="getContainerPath(profileData?.perf.flamegraph)" 
+                    <div class="svg-container">
+                      <el-button 
+                        v-if="profileData?.perf?.flamegraph" 
+                        @click="openSvgInNewTab(profileData.perf.flamegraph)" 
+                        size="small" 
+                        style="margin-bottom: 10px;"
+                      >
+                        在新窗口打开
+                      </el-button>
+                      <embed
+                        v-if="profileData?.perf?.flamegraph"
+                        :src="getContainerPath(profileData.perf.flamegraph)" 
                         type="image/svg+xml"
                         class="flame-graph"
-                      ></object>
+                      />
+                      <div v-else class="no-data">暂无火焰图数据</div>
                     </div>
-                    <div v-else class="no-data">暂无火焰图数据</div>
                   </el-tab-pane>
                   <el-tab-pane label="perf report" name="perfreport">
                     <div class="profile-content">
@@ -205,14 +214,23 @@
             <div class="profile-section">
               <h3>调用关系图</h3>
               <div class="profile-content">
-                <div class="svg-container" v-if="profileData?.callgrind">
-                  <object 
-                    :data="getContainerPath(profileData?.callgrind)" 
+                <div class="svg-container">
+                  <el-button 
+                    v-if="profileData?.callgrind" 
+                    @click="openSvgInNewTab(profileData.callgrind)" 
+                    size="small" 
+                    style="margin-bottom: 10px;"
+                  >
+                    在新窗口打开
+                  </el-button>
+                  <embed
+                    v-if="profileData?.callgrind"
+                    :src="getContainerPath(profileData.callgrind)" 
                     type="image/svg+xml"
                     class="flame-graph"
-                  ></object>
+                  />
+                  <div v-else class="no-data">暂无调用图数据</div>
                 </div>
-                <div class="no-data" v-else>暂无调用图数据</div>
               </div>
             </div>
 
@@ -770,7 +788,7 @@ export default {
             // 如果测试已完成，停止轮询并刷新数据
             if (newStatus && newStatus !== 'running') {
               stopLogPolling()
-              await loadTestResults() // 重新加载列表以获��完整数据
+              await loadTestResults() // 重新加载列表以获取完整数据
             }
           }
         }
@@ -892,6 +910,11 @@ export default {
       );
     };
 
+    const openSvgInNewTab = (path) => {
+      if (path) {
+        window.open(getContainerPath(path), '_blank');
+      }
+    };
 
     return {
       testResults,
@@ -923,7 +946,8 @@ export default {
       profileData,
       memoryActiveTab,
       cpuProfileTab,
-      getContainerPath
+      getContainerPath,
+      openSvgInNewTab
     }
   }
 }
@@ -1056,12 +1080,15 @@ export default {
 .svg-container {
   width: 100%;
   height: 500px;
-  overflow: auto;
+  position: relative;
 }
 
-.svg-container object {
+.flame-graph {
   width: 100%;
-  height: 100%;
+  height: calc(100% - 40px);
+  min-width: 800px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
 }
 
 .valgrind-output {
@@ -1080,7 +1107,6 @@ export default {
   white-space: pre-wrap;
   word-wrap: break-word;
 }
-
 
 .flame-graph {
   width: 100%;
