@@ -392,12 +392,18 @@ def delete_test_result(id):
     try:
         result = TestResult.query.get_or_404(id)
         
-        # 删除结果目录（如果存在）
-        if result.result_dir and os.path.exists(result.result_dir):
-            import shutil
-            shutil.rmtree(result.result_dir)
+        # 将宿主机路径转换为容器内路径
+        container_path = result.result_dir.replace(
+            '/root/flask-vue',
+            '/usr/src/app'
+        ) if result.result_dir else None
         
-        # 删除��据库记录
+        # 删除结果目录（如果存在）
+        if container_path and os.path.exists(container_path):
+            import shutil
+            shutil.rmtree(container_path)
+        
+        # 删除数据库记录
         db.session.delete(result)
         db.session.commit()
         
