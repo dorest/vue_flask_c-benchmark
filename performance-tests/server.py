@@ -100,6 +100,10 @@ class TestServer:
             
     def execute_test(self, test_id, command, enable_profiling=False, profiling_config=None):
         """扩展执行测试函数，添加性能分析支持"""
+        self.profiling_enabled = enable_profiling
+        self.profiling_tools['perf'] = 'perf' in profiling_config['tools']
+        self.profiling_tools['valgrind'] = 'valgrind' in profiling_config['tools']
+        self.profiling_tools['callgrind'] = 'callgrind' in profiling_config['tools']
         timestamp = datetime.now()
         self.logger.info(f"Starting test execution for test case: {test_id} at {timestamp}")
         
@@ -207,6 +211,7 @@ class TestServer:
                     # 执行性能分析
                     if enable_profiling:
                         prof_results = run_profiling(cmd)
+                        profiling_results['tools'] = self.profiling_tools
                         profiling_results[f"command_{i}"] = prof_results
                     
                     # 保持原有的命令执行逻辑

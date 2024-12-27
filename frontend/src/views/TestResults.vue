@@ -143,7 +143,7 @@
         <el-tab-pane label="性能分析" name="profiling" v-if="hasProfileData">
           <div class="profiling-container">
             <!-- CPU Profile -->
-            <div class="profile-section">
+            <div class="profile-section" v-if="profileTools.perf">
               <h3>CPU Profile</h3>
               <div class="profile-content">
                 <el-tabs v-model="cpuProfileTab">
@@ -211,7 +211,7 @@
             </div>
 
             <!-- 调用图分析 -->
-            <div class="profile-section">
+            <div class="profile-section" v-if="profileTools.callgrind">
               <h3>调用关系图</h3>
               <div class="profile-content">
                 <div class="svg-container">
@@ -235,7 +235,7 @@
             </div>
 
             <!-- 内存分析 -->
-            <div class="profile-section">
+            <div class="profile-section" v-if="profileTools.valgrind">
               <h3>内存分析</h3>
               <div class="profile-content">
                 <el-tabs v-model="memoryActiveTab">
@@ -294,6 +294,11 @@ export default {
     const profileData = ref({})
     const memoryActiveTab = ref('leaks')
     const cpuProfileTab = ref('flamegraph')
+    const profileTools = ref({
+        perf: false,
+        callgrind: false,
+        valgrind: false
+    })
     const charts = ref({
       cpu: null,
       memory: null,
@@ -625,6 +630,10 @@ export default {
         hasProfileData.value = profileDetails.data.has_profile
         if (hasProfileData.value) {
           profileData.value = profileDetails.data.profile_results.command_1
+          
+          // 更新 profileTools
+          profileTools.value = profileDetails.data.profile_results.tools
+          console.log(profileTools.value)
         }
 
         activeTab.value = 'charts'
@@ -743,7 +752,7 @@ export default {
       return types[status] || 'info'
     }
 
-    // 获取差异值样式
+    // 获取差异值���式
     const getDiffClass = (diff) => {
       return {
         'text-success': diff <= 0,
@@ -947,7 +956,8 @@ export default {
       memoryActiveTab,
       cpuProfileTab,
       getContainerPath,
-      openSvgInNewTab
+      openSvgInNewTab,
+      profileTools
     }
   }
 }
