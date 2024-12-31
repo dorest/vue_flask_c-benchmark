@@ -59,21 +59,21 @@
           <el-switch v-model="newTestCase.enable_profiling" />
         </el-form-item>
 
-        <el-form-item label="分析工具" v-if="newTestCase.enable_profiling">
-          <el-checkbox-group v-model="newTestCase.profiling_tools">
-            <el-checkbox label="perf">CPU 分析 (perf)</el-checkbox>
-            <el-checkbox label="valgrind">内存分析 (Valgrind)</el-checkbox>
-            <el-checkbox label="callgrind">调用图分析 (Callgrind)</el-checkbox>
-          </el-checkbox-group>
+        <el-form-item label="性能分析工具" v-if="newTestCase.enable_profiling">
+          <el-radio-group v-model="newTestCase.profiling_tools">
+            <el-radio label="perf">CPU 分析 (perf)</el-radio>
+            <el-radio label="callgrind">调用关系分析 (callgrind)</el-radio>
+            <el-radio label="valgrind">内存分析 (valgrind)</el-radio>
+          </el-radio-group>
         </el-form-item>
 
         <el-form-item 
           label="采样频率" 
-          v-if="newTestCase.enable_profiling && newTestCase.profiling_tools.includes('perf')"
+          v-if="newTestCase.enable_profiling && newTestCase.profiling_tools === 'perf'"
         >
           <el-input-number 
             v-model="newTestCase.perf_frequency" 
-            :min="1"
+            :min="1" 
             :max="999"
             :step="1"
           />
@@ -82,7 +82,7 @@
 
         <el-form-item 
           label="内存检查级别" 
-          v-if="newTestCase.enable_profiling && newTestCase.profiling_tools.includes('valgrind')"
+          v-if="newTestCase.enable_profiling && newTestCase.profiling_tools === 'valgrind'"
         >
           <el-select v-model="newTestCase.valgrind_level">
             <el-option label="基础检查" value="basic" />
@@ -93,7 +93,7 @@
           <!-- Callgrind 配置选项 -->
         <el-form-item 
           label="Callgrind 配置" 
-          v-if="newTestCase.enable_profiling && newTestCase.profiling_tools.includes('callgrind')"
+          v-if="newTestCase.enable_profiling && newTestCase.profiling_tools === 'callgrind'"
         >
           <div class="callgrind-options">
             <el-checkbox v-model="newTestCase.callgrind_config.collect_jumps">
@@ -167,7 +167,7 @@ export default {
       description: '',
       command: '',
       enable_profiling: false,
-      profiling_tools: ['perf'],  // 默认选择 perf
+      profiling_tools: 'perf',  // 默认选择 perf
       perf_frequency: 99,         // 默认采样频率
       valgrind_level: 'full',     // 默认内存检查级别
       callgrind_config: {         // 新增 callgrind 配置
@@ -213,7 +213,7 @@ export default {
       isEditing.value = true
       newTestCase.value = {
         ...row,
-        profiling_tools: row.profiling_config?.tools || ['perf'],
+        profiling_tools: row.profiling_config?.tools || 'perf',
         perf_frequency: row.profiling_config?.perf_frequency || 99,
         valgrind_level: row.profiling_config?.valgrind_level || 'full',
         callgrind_config: row.profiling_config?.callgrind_config || {
@@ -291,7 +291,7 @@ export default {
         description: '',
         command: '',
         enable_profiling: false,
-        profiling_tools: ['perf'],
+        profiling_tools: 'perf',
         perf_frequency: 99,
         valgrind_level: 'full',
         callgrind_config: {
@@ -391,9 +391,9 @@ export default {
 }
 
 .hint {
-  margin-left: 8px;
+  margin-left: 10px;
   color: #909399;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .el-checkbox-group {
