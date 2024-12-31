@@ -176,16 +176,6 @@
                       <div v-else class="no-data">暂无report数据</div>
                     </div>
                   </el-tab-pane>
-                  <el-tab-pane label="perf stat" name="perfstat">
-                    <div class="profile-content">
-                      <iframe
-                        v-if="profileData?.perf.stat"
-                        :src="getContainerPath(profileData.perf.stat)"
-                        class="perf-text-frame"
-                      ></iframe>
-                      <div v-else class="no-data">暂无stat数据</div>
-                    </div>
-                  </el-tab-pane>
                   <el-tab-pane label="perf annotate" name="annotate">
                     <div class="profile-content">
                       <iframe

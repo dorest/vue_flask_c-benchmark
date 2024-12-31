@@ -25,7 +25,7 @@ class TestServer:
         # 存储每个测试的日志队列和状态
         self.test_logs = {}
         self.test_status = {}
-        self.api_url = 'http://172.18.0.4:5000'  # 根据实际情况修改,docker inspect flask_app 查看下ip
+        self.api_url = 'http://172.18.0.3:5000'  # 根据实际情况修改,docker inspect flask_app 查看下ip
         self.test_timestamps = {}  # 存储 test_case_id 对应的启动时间
         # 禁用代理设置
         os.environ['NO_PROXY'] = '*'
@@ -146,9 +146,6 @@ class TestServer:
                         # 生成 perf report 输出
                         subprocess.run(f"perf report -i {perf_data} > {profile_dir}/perf_report.txt", shell=True)
                         
-                        # 生成 perf stat 输出
-                        subprocess.run(f"perf stat -a -g -i {perf_data} > {profile_dir}/perf_stat.txt", shell=True)
-                        
                         # 生成 perf annotate 输出
                         subprocess.run(f"perf annotate -i {perf_data} > {profile_dir}/perf_annotate.txt", shell=True)
                         
@@ -156,7 +153,6 @@ class TestServer:
                         profiling_results['perf'] = {
                             'flamegraph': f"{profile_dir}/flamegraph.svg",
                             'report': f"{profile_dir}/perf_report.txt",
-                            'stat': f"{profile_dir}/perf_stat.txt",
                             'annotate': f"{profile_dir}/perf_annotate.txt",
                             'raw_data': perf_data,
                             'script': f"{profile_dir}/perf.script",
