@@ -10,6 +10,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import psutil
 import time
+import xml.etree.ElementTree as ET
 
 class TestServer:
     def __init__(self):
@@ -126,6 +127,156 @@ class TestServer:
             with open(f"{result_dir}/output.log", 'a') as f:
                 f.write(f"{msg}\n")
 
+        def xml_to_text(xml_file, text_file):
+            """将 valgrind XML 转换为可读的文本格式"""
+            import xml.etree.ElementTree as ET
+            
+            try:
+                tree = ET.parse(xml_file)
+                root = tree.getroot()
+                
+                with open(text_file, 'w') as f:
+                    # 写入头部信息
+                    for line in root.findall('.//preamble/line'):
+                        if line.text:
+                            f.write(f"{line.text}\n")
+                    f.write("\n")
+                    
+                    # 写入命令信息
+                    cmd = root.find('.//args/argv/exe')
+                    args = root.findall('.//args/argv/arg')
+                    if cmd is not None and cmd.text:
+                        cmd_str = cmd.text
+                        for arg in args:
+                            if arg.text:
+                                cmd_str += f" {arg.text}"
+                        f.write(f"Command: {cmd_str}\n\n")
+                    
+                    # 写入运行状态
+                    final_status = root.findall('.//status')[-1]
+                    if final_status is not None:
+                        state = final_status.find('state')
+                        time = final_status.find('time')
+                        if state is not None and time is not None:
+                            f.write(f"Status: {state.text} in {time.text}\n\n")
+                    
+                    # 写入错误信息
+                    for error in root.findall('.//error'):
+                        # 获取错误类型和描述
+                        kind = error.find('kind')
+                        xwhat = error.find('xwhat/text')
+                        
+                        if kind is not None and kind.text:
+                            f.write(f"\n==ERROR== {kind.text}\n")
+                        if xwhat is not None and xwhat.text:
+                            f.write(f"==ERROR== {xwhat.text}\n")
+                        
+                        # 写入调用栈
+                        stack = error.find('stack')
+                        if stack is not None:
+                            f.write("==ERROR== Stack trace:\n")
+                            for frame in stack.findall('frame'):
+                                fn = frame.find('fn')
+                                file = frame.find('file')
+                                line = frame.find('line')
+                                
+                                if fn is not None and fn.text:
+                                    frame_info = f"==ERROR==    at {fn.text}"
+                                    if file is not None and file.text:
+                                        frame_info += f" ({file.text}"
+                                        if line is not None and line.text:
+                                            frame_info += f":{line.text}"
+                                        frame_info += ")"
+                                    f.write(f"{frame_info}\n")
+                        
+                        f.write("\n")
+                    
+                    # 如果没有错误信息
+                    if not root.findall('.//error'):
+                        f.write("No memory leaks or errors detected.\n")
+                        
+                return True
+            except Exception as e:
+                print(f"Error converting XML to text: {e}")
+                return False
+        def generate_memory_svg(xml_file, svg_file):
+            """将 valgrind XML 输出转换为内存泄漏可视化图"""
+            import xml.etree.ElementTree as ET
+            import graphviz
+            
+            try:
+                tree = ET.parse(xml_file)
+                root = tree.getroot()
+                
+                # 检查是否有错误信息
+                errors = root.findall('.//error')
+                if not errors:
+                    print("No memory leaks detected, skipping SVG generation")
+                    return False
+                    
+                # 创建有向图
+                dot = graphviz.Digraph(comment='Memory Leak Analysis')
+                dot.attr(rankdir='TB')  # 从上到下的布局
+                
+                has_valid_error = False  # 跟踪是否有有效的错误信息
+                
+                # 遍历所有错误
+                for error in errors:
+                    kind = error.find('kind')
+                    xwhat = error.find('xwhat/text')
+                    
+                    if kind is not None and xwhat is not None and kind.text and xwhat.text:
+                        has_valid_error = True
+                        # 创建错误节点
+                        error_id = f"error_{error.find('unique').text}"
+                        error_label = f"{kind.text}\n{xwhat.text}"
+                        dot.node(error_id, error_label, 
+                                shape='box', 
+                                style='filled', 
+                                fillcolor='red',
+                                fontcolor='white')
+                        
+                        # 处理调用栈
+                        stack = error.find('stack')
+                        if stack is not None:
+                            prev_node = error_id
+                            for i, frame in enumerate(stack.findall('frame')):
+                                fn = frame.find('fn')
+                                file = frame.find('file')
+                                line = frame.find('line')
+                                
+                                if fn is not None and fn.text:
+                                    frame_id = f"{error_id}_frame_{i}"
+                                    
+                                    # 构建帧标签
+                                    frame_label = fn.text
+                                    if file is not None and file.text:
+                                        frame_label += f"\n{file.text}"
+                                        if line is not None and line.text:
+                                            frame_label += f":{line.text}"
+                                    
+                                    # 添加帧节点
+                                    dot.node(frame_id, frame_label, 
+                                        shape='box',
+                                        style='filled',
+                                        fillcolor='lightblue')
+                                    
+                                    # 连接节点
+                                    dot.edge(prev_node, frame_id)
+                                    prev_node = frame_id
+                
+                # 只在有有效错误信息时生成 SVG
+                if has_valid_error:
+                    dot.render(svg_file, format='svg', cleanup=True)
+                    return True
+                else:
+                    print("No valid memory leak information found, skipping SVG generation")
+                    return False
+                
+            except Exception as e:
+                print(f"Error generating memory SVG: {e}")
+                return False
+
         def run_profiling(cmd):
             """执行性能分析"""
             profiling_results = {}
@@ -162,9 +313,20 @@ class TestServer:
                     # 2. Valgrind 内存分析
                     if self.profiling_tools['valgrind']:
                         valgrind_log = os.path.join(profile_dir, 'valgrind.log')
-                        valgrind_cmd = f"valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --log-file={valgrind_log} {cmd}"
+                        valgrind_xml = os.path.join(profile_dir, 'valgrind.xml')
+                        
+                        # 只生成 XML 输出
+                        valgrind_cmd = f"valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --xml=yes --xml-file={valgrind_xml} {cmd}"
                         subprocess.run(valgrind_cmd, shell=True, check=True)
-                        profiling_results['valgrind'] = valgrind_log
+                        
+                        # 从 XML 生成文本日志
+                        if xml_to_text(valgrind_xml, valgrind_log):
+                            profiling_results['valgrind'] = valgrind_log
+                        
+                        # 生成内存分析图
+                        heap_svg = os.path.join(profile_dir, 'heap')
+                        if generate_memory_svg(valgrind_xml, heap_svg):
+                            profiling_results['heap'] = heap_svg + '.svg'
 
                     # 3. Callgrind 调用图分析
                     if self.profiling_tools['callgrind']:

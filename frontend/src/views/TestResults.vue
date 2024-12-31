@@ -239,11 +239,11 @@
                       <div v-else class="no-data">暂无内存泄漏数据</div>
                     </div>
                   </el-tab-pane>
-                  <el-tab-pane label="堆内存分析" name="heap">
+                  <el-tab-pane label="可视化结果" name="heap">
                     <div class="svg-container" v-if="profileData.heap">
                       <object :data="getContainerPath(profileData.heap)" type="image/svg+xml"></object>
                     </div>
-                    <div class="no-data" v-else>暂无堆内存分析数据</div>
+                    <div class="no-data" v-else>暂无内存泄漏可视化结果</div>
                   </el-tab-pane>
                 </el-tabs>
               </div>
