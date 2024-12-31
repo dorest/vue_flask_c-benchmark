@@ -126,13 +126,6 @@
           </div>
         </el-tab-pane>
         
-        <!-- <el-tab-pane label="火焰图">
-          <div class="flame-graph-container">
-            <img :src="currentFlameGraphUrl" alt="Flame Graph" v-if="currentFlameGraphUrl" />
-            <div v-else class="no-data">暂无火焰图数据</div>
-          </div>
-        </el-tab-pane> -->
-        
         <el-tab-pane label="控制台输出">
           <div class="console-output">
             <pre v-for="(log, index) in testLogs" :key="index" :class="getLogClass(log)">{{ log }}</pre>
@@ -188,16 +181,6 @@
                   </el-tab-pane>
                 </el-tabs>
               </div>
-              <!-- <div class="profile-content">
-                <div class="svg-container" v-if="profileData?.perf">
-                  <object
-                    :data="getContainerPath(profileData?.perf)" 
-                    type="image/svg+xml"
-                    class="flame-graph"
-                  ></object>
-                </div>
-                <div class="no-data" v-else>暂无 CPU Profile 数据</div>
-              </div> -->
             </div>
 
             <!-- 调用图分析 -->
@@ -243,7 +226,7 @@
                     <div class="svg-container" v-if="profileData.heap">
                       <object :data="getContainerPath(profileData.heap)" type="image/svg+xml"></object>
                     </div>
-                    <div class="no-data" v-else>暂无内存泄漏可视化结果</div>
+                    <div class="no-data" v-else>暂无可视化结果</div>
                   </el-tab-pane>
                 </el-tabs>
               </div>
