@@ -45,7 +45,22 @@ class ScheduledTask(db.Model):
     __tablename__ = 'scheduled_tasks'
     
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
     test_case_id = db.Column(db.Integer, db.ForeignKey('test_cases.id'), nullable=False)
-    schedule_type = db.Column(db.String(20), nullable=False)
-    cron_expression = db.Column(db.String(100), nullable=False)
-    is_active = db.Column(db.Boolean, default=True)
+    cron = db.Column(db.String(100), nullable=False)
+    enabled = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    test_case = db.relationship('TestCase', backref=db.backref('scheduled_tasks', lazy=True))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'test_case_id': self.test_case_id,
+            'cron': self.cron,
+            'enabled': self.enabled,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at
+        }

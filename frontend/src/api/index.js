@@ -164,5 +164,25 @@ export default {
   // 获取性能分析数据
   getTestProfile(resultId) {
     return api.get(`/test-results/${resultId}/profile`)
+  },
+  // 获取定时任务列表
+  getScheduledTasks() {
+    return api.get('/api/scheduled-tasks')
+  },
+  // 创建定时任务
+  createScheduledTask(data) {
+    return api.post('/api/scheduled-tasks', data)
+  },
+  // 更新定时任务
+  updateScheduledTask(id, data) {
+    return api.put(`/api/scheduled-tasks/${id}`, data)
+  },
+  // 切换任务状态
+  toggleScheduledTask(id) {
+    return api.put(`/api/scheduled-tasks/${id}/toggle`)
+  },
+  // 删除定时任务
+  deleteScheduledTask(id) {
+    return api.delete(`/api/scheduled-tasks/${id}`)
   }
 } 

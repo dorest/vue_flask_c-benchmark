@@ -82,53 +82,6 @@ def create_test_case():
         }), 201
 
 
-@api_bp.route('/test-cases/<int:id>/run', methods=['POST'])
-def run_test_case(id):
-    test_case = TestCase.query.get_or_404(id)
-    parameters = request.json.get('parameters', {})
-    
-    # 执行测试
-    result = PerfService.run_perf_test(test_case, parameters)
-    
-    # 保存结果
-    test_result = TestResult(
-        test_case_id=test_case.id,
-        start_time=result['start_time'],
-        end_time=result['end_time'],
-        status=result['status'],
-        perf_data=result['perf_data'],
-        benchmark_data=result.get('benchmark_data'),
-        flamegraph_path=result.get('flamegraph_path')
-    )
-    db.session.add(test_result)
-    db.session.commit()
-    
-    return jsonify(result)
-
-@api_bp.route('/scheduled-tasks', methods=['POST'])
-def create_scheduled_task():
-    data = request.json
-    task = ScheduledTask(
-        test_case_id=data['test_case_id'],
-        schedule_type=data['schedule_type'],
-        cron_expression=data['cron_expression'],
-        is_active=True
-    )
-    db.session.add(task)
-    db.session.commit()
-    
-    # 添加定时任务
-    scheduler.add_job(
-        func=PerfService.run_perf_test,
-        trigger='cron',
-        args=[TestCase.query.get(task.test_case_id), {}],
-        id=f'task_{task.id}',
-        **dict(zip(['minute', 'hour', 'day', 'month', 'day_of_week'],
-                   task.cron_expression.split()))
-    )
-    
-    return jsonify({'id': task.id}), 201
-
 @api_bp.route('/test-cases/<int:id>', methods=['DELETE'])
 def delete_test_case(id):
     test_case = TestCase.query.get_or_404(id)
@@ -542,3 +495,89 @@ def get_test_profile(result_id):
         return jsonify(profile_data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/api/scheduled-tasks', methods=['GET'])
+def get_scheduled_tasks():
+    tasks = ScheduledTask.query.all()
+    return jsonify({
+        'tasks': [{
+            'id': task.id,
+            'name': task.name,
+            'test_case_id': task.test_case_id,
+            'cron': task.cron,
+            'enabled': task.enabled
+        } for task in tasks]
+    })
+
+@api_bp.route('/api/scheduled-tasks', methods=['POST'])
+def create_scheduled_task():
+    data = request.get_json()
+    task = ScheduledTask(
+        name=data['name'],
+        test_case_id=data['test_case_id'],
+        cron=data['cron'],
+        enabled=True
+    )
+    
+    try:
+        db.session.add(task)
+        db.session.commit()
+        return jsonify({
+            'message': '添加任务成功',
+            'task': {
+                'id': task.id,
+                'name': task.name,
+                'test_case_id': task.test_case_id,
+                'cron': task.cron,
+                'enabled': task.enabled
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': str(e)}), 500
+
+@api_bp.route('/api/scheduled-tasks/<int:id>/toggle', methods=['PUT'])
+def toggle_scheduled_task(id):
+    task = ScheduledTask.query.get_or_404(id)
+    try:
+        task.enabled = not task.enabled
+        db.session.commit()
+        return jsonify({
+            'message': f"任务已{'启用' if task.enabled else '禁用'}"
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': str(e)}), 500
+
+@api_bp.route('/api/scheduled-tasks/<int:id>', methods=['DELETE'])
+def delete_scheduled_task(id):
+    task = ScheduledTask.query.get_or_404(id)
+    try:
+        db.session.delete(task)
+        db.session.commit()
+        return jsonify({'message': '删除任务成功'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': str(e)}), 500
+
+# 更新定时任务
+@api_bp.route('/api/scheduled-tasks/<int:id>', methods=['PUT'])
+def update_scheduled_task(id):
+    task = ScheduledTask.query.get_or_404(id)
+    data = request.get_json()
+    
+    try:
+        task.name = data['name']
+        task.test_case_id = data['test_case_id']
+        task.cron = data['cron']
+        task.enabled = data.get('enabled', task.enabled)
+        task.updated_at = datetime.utcnow()
+        
+        db.session.commit()
+        return jsonify({
+            'message': '更新任务成功',
+            'task': task.to_dict()
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': str(e)}), 500
