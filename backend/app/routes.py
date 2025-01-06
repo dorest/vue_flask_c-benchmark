@@ -480,12 +480,12 @@ def get_test_profile(result_id):
         
         profile_data = {
             'result_dir': result_dir,
-            'has_profile': os.path.exists(result_dir),
+            'has_profile': result.has_profile,
             'profile_results': {}
         }
         current_app.logger.info(f"==========profiling_dir: {result_dir}===========")
         
-        if os.path.exists(result_dir):
+        if result.has_profile and os.path.exists(result_dir):
             # 读取性能分析结果
             results_file = os.path.join(result_dir, 'profiling_results.json')
             if os.path.exists(results_file):
@@ -520,28 +520,62 @@ def create_scheduled_task():
     )
     
     try:
+        # 获取测试用例信息
+        test_case = TestCase.query.get_or_404(data['test_case_id'])
+        
+        # 先发送到测试客户端
+        client = TestClient()
+        result = client.handle_message({
+            'action': 'add_schedule',
+            'task_id': task.id,
+            'test_id': test_case.id,
+            'command': test_case.command,
+            'enable_profiling': test_case.enable_profiling,
+            'profiling_config': test_case.profiling_config,
+            'cron': task.cron
+        })
+        
+        if result['status'] == 'error':
+            return jsonify({'message': result['message']}), 500
+        
+        # test_client 操作成功后再写入数据库
         db.session.add(task)
         db.session.commit()
+        
         return jsonify({
             'message': '添加任务成功',
-            'task': {
-                'id': task.id,
-                'name': task.name,
-                'test_case_id': task.test_case_id,
-                'cron': task.cron,
-                'enabled': task.enabled
-            }
+            'task': task.to_dict()
         })
     except Exception as e:
-        db.session.rollback()
         return jsonify({'message': str(e)}), 500
 
 @api_bp.route('/api/scheduled-tasks/<int:id>/toggle', methods=['PUT'])
 def toggle_scheduled_task(id):
     task = ScheduledTask.query.get_or_404(id)
     try:
+        # 获取测试用例信息
+        test_case = TestCase.query.get_or_404(task.test_case_id)
+        
+        # 发送到测试客户端
+        client = TestClient()
+        result = client.handle_message({
+            'action': 'toggle_schedule',
+            'task_id': task.id,
+            'enabled': not task.enabled,  # 先发送新状态
+            'test_id': test_case.id,
+            'command': test_case.command,
+            'enable_profiling': test_case.enable_profiling,
+            'profiling_config': test_case.profiling_config,
+            'cron': task.cron
+        })
+        
+        if result['status'] == 'error':
+            return jsonify({'message': result['message']}), 500
+            
+        # 客户端操作成功后更新数据库
         task.enabled = not task.enabled
         db.session.commit()
+        
         return jsonify({
             'message': f"任务已{'启用' if task.enabled else '禁用'}"
         })
@@ -553,27 +587,57 @@ def toggle_scheduled_task(id):
 def delete_scheduled_task(id):
     task = ScheduledTask.query.get_or_404(id)
     try:
+        # 发送到测试客户端
+        client = TestClient()
+        result = client.handle_message({
+            'action': 'delete_schedule',
+            'task_id': task.id
+        })
+        
+        if result['status'] == 'error':
+            return jsonify({'message': result['message']}), 500
+            
+        # 客户端操作成功后删除数据库记录
         db.session.delete(task)
         db.session.commit()
+        
         return jsonify({'message': '删除任务成功'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'message': str(e)}), 500
 
-# 更新定时任务
 @api_bp.route('/api/scheduled-tasks/<int:id>', methods=['PUT'])
 def update_scheduled_task(id):
     task = ScheduledTask.query.get_or_404(id)
     data = request.get_json()
     
     try:
+        # 获取测试用例信息
+        test_case = TestCase.query.get_or_404(data['test_case_id'])
+        
+        # 发送到测试客户端
+        client = TestClient()
+        result = client.handle_message({
+            'action': 'add_schedule',  # 使用 add_schedule 来更新现有任务
+            'task_id': task.id,
+            'test_id': test_case.id,
+            'command': test_case.command,
+            'enable_profiling': test_case.enable_profiling,
+            'profiling_config': test_case.profiling_config,
+            'cron': data['cron']  # 使用新的 cron 表达式
+        })
+        
+        if result['status'] == 'error':
+            return jsonify({'message': result['message']}), 500
+            
+        # 客户端操作成功后更新数据库
         task.name = data['name']
         task.test_case_id = data['test_case_id']
         task.cron = data['cron']
         task.enabled = data.get('enabled', task.enabled)
-        task.updated_at = datetime.utcnow()
-        
+        task.updated_at = datetime.now()
         db.session.commit()
+        
         return jsonify({
             'message': '更新任务成功',
             'task': task.to_dict()

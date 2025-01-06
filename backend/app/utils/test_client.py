@@ -2,6 +2,10 @@ import socket
 import json
 import logging
 import time
+from datetime import datetime  
+import requests
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # 配置日志
 logging.basicConfig(
@@ -16,7 +20,12 @@ class TestClient:
         self.port = port
         self.timeout = timeout
         self.max_retries = max_retries
+        self.api_url = 'http://172.18.0.3:5000'  # 根据实际情况修改,docker inspect flask_app 查看下ip
         logger.info(f"TestClient initialized with host={host}, port={port}")
+        
+        # 添加调度器
+        self.scheduler = BackgroundScheduler()
+        self.scheduler.start()
     
     def execute_test(self, test_id, command, enable_profiling, profiling_config):
         """执行测试用例"""
@@ -57,7 +66,187 @@ class TestClient:
             return False
         finally:
             sock.close()
-    
+            
+    def handle_message(self, message):
+        """处理接收到的消息"""
+        try:
+            action = message.get('action')
+            if action == 'add_schedule':
+                return self.add_schedule(message)
+            elif action == 'toggle_schedule':
+                return self.toggle_schedule(message)
+            elif action == 'delete_schedule':
+                return self.delete_schedule(message)
+            else:
+                return {
+                    'status': 'error',
+                    'message': f'Unknown action: {action}'
+                }
+            
+        except Exception as e:
+            print(f"Error handling message: {e}")
+            return {
+                'status': 'error',
+                'message': str(e)
+            }
+
+    def add_schedule(self, message):
+        """添加定时任务"""
+        try:
+            task_id = message.get('task_id')
+            test_id = message.get('test_id')
+            command = message.get('command')
+            enable_profiling = message.get('enable_profiling', False)
+            profiling_config = message.get('profiling_config', {})
+            cron = message.get('cron')
+
+            self.scheduler.add_job(
+                func=self.run_scheduled_test,
+                trigger=CronTrigger.from_crontab(cron),
+                id=f'task_{task_id}',
+                args=[task_id, {
+                    'id': test_id,
+                    'command': command,
+                    'enable_profiling': enable_profiling,
+                    'profiling_config': profiling_config
+                }],
+                replace_existing=True
+            )
+            
+            return {
+                'status': 'success',
+                'message': 'Schedule added successfully'
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': str(e)
+            }
+
+    def toggle_schedule(self, message):
+        """切换定时任务状态"""
+        try:
+            task_id = message.get('task_id')
+            enabled = message.get('enabled')
+            job_id = f'task_{task_id}'
+
+            if enabled:
+                test_id = message.get('test_id')
+                command = message.get('command')
+                enable_profiling = message.get('enable_profiling', False)
+                profiling_config = message.get('profiling_config', {})
+                cron = message.get('cron')
+
+                self.scheduler.add_job(
+                    func=self.run_scheduled_test,
+                    trigger=CronTrigger.from_crontab(cron),
+                    id=job_id,
+                    args=[task_id, {
+                        'id': test_id,
+                        'command': command,
+                        'enable_profiling': enable_profiling,
+                        'profiling_config': profiling_config
+                    }],
+                    replace_existing=True
+                )
+            else:
+                if self.scheduler.get_job(job_id):
+                    self.scheduler.remove_job(job_id)
+
+            return {
+                'status': 'success',
+                'message': f"Task {'enabled' if enabled else 'disabled'} successfully"
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': str(e)
+            }
+
+    def delete_schedule(self, message):
+        """删除定时任务"""
+        try:
+            task_id = message.get('task_id')
+            job_id = f'task_{task_id}'
+
+            if self.scheduler.get_job(job_id):
+                self.scheduler.remove_job(job_id)
+
+            return {
+                'status': 'success',
+                'message': 'Schedule deleted successfully'
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': str(e)
+            }
+
+    # def run_scheduled_test(self, task_id, test_case):
+    #     """执行定时任务"""
+    #     try:
+    #         # 使用现有的测试执行逻辑
+    #         response = self.execute_test(
+    #             test_id=test_case['id'],
+    #             command=test_case['command'],
+    #             enable_profiling=test_case['enable_profiling'],
+    #             profiling_config=test_case['profiling_config']
+    #         )
+    #         if 'error' in response:
+    #             return {
+    #                 'code': 500,
+    #                 'message': response['error']
+    #             }
+                
+    #         # 创建测试结果记录
+    #         result = TestResult(
+    #             test_case_id=test_case['test_id'],
+    #             start_time=datetime.now(),
+    #             status='running',
+    #             result_dir=response['result_dir'],
+    #             has_profile=test_case['enable_profiling']
+    #         )
+    #         db.session.add(result)
+    #         db.session.commit()
+    #         return {
+    #             'status': 'success',
+    #             'message': 'Test executed successfully'
+    #         }
+    #     except Exception as e:
+    #         return {
+    #             'status': 'error',
+    #             'message': str(e)
+    #         }
+    def run_scheduled_test(self, task_id, test_case):
+        """执行定时任务"""
+        try:
+            # 使用现有的 execute_test_case 接口
+            response = requests.post(
+                f'{self.api_url}/test-cases/{test_case["id"]}/execute',
+                proxies={'http': None, 'https': None},
+                timeout=5
+            )
+
+            if response.status_code != 200:
+                print(f"Error executing test: {response.text}")  # 添加日志
+                return {
+                    'status': 'error',
+                    'message': response.json().get('message', '执行测试失败')
+                }
+
+            return {
+                'status': 'success',
+                'message': '测试已启动',
+                'data': response.json().get('data')
+            }
+
+        except Exception as e:
+            print(f"Exception in run_scheduled_test: {str(e)}")  # 添加日志
+            return {
+                'status': 'error',
+                'message': str(e)
+            }
+            
     def _send_request(self, request_data):
         """发送请求到测试服务器，支持重试"""
         retry_count = 0
