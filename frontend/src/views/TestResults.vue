@@ -822,12 +822,17 @@ export default {
     })
     
     const handleWebSocketMessage = (data) => {
+      console.log('Received WebSocket message:', data)
       const result = testResults.value.find(r => r.id === data.test_id)
-      if (result) {
+      if (result && data.type === 'update_status') {
         result.status = data.status
         if (data.end_time) {
           result.end_time = data.end_time
         }
+      }
+      else if (data.type === 'new_result') {
+        console.log('Loading new test results...')
+        loadTestResults()
       }
     }
 

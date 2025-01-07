@@ -35,6 +35,7 @@ def notify_clients(data):
     dead_connections = set()
     for ws in active_connections:
         try:
+            current_app.logger.info(f"Sending data to client: {data}")
             ws.send(json.dumps(data))
         except Exception:
             dead_connections.add(ws)
@@ -296,6 +297,10 @@ def execute_test_case(id):
         db.session.add(result)
         db.session.commit()
         
+        notify_clients({
+                'type': 'new_result',
+                'test_id': result.id 
+            })
         return jsonify({
             'code': 200,
             'message': '测试已启动',
@@ -423,12 +428,12 @@ def update_test_status():
             
             # 通知所有客户端状态更新，包含性能数据
             notify_data = {
+                'type': 'update_status',
                 'test_id': result.id,
                 'status': result.status,
                 'end_time': result.end_time.isoformat() if result.end_time else None
             }
-            if perf_data:
-                notify_data['perf_data'] = perf_data
+
             
             notify_clients(notify_data)
             

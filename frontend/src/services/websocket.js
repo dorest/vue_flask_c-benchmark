@@ -2,6 +2,7 @@ class WebSocketService {
     constructor() {
         this.ws = null
         this.callbacks = new Set()
+        this.pendingMessages = []  // 添加消息队列
     }
 
     connect() {
@@ -19,8 +20,16 @@ class WebSocketService {
 
         this.ws.onmessage = (event) => {
             console.log('Received message:', event.data)
+            console.log('callbacks:', this.callbacks)
             const data = JSON.parse(event.data)
-            this.callbacks.forEach(callback => callback(data))
+            if (this.callbacks.size === 0) {
+                // 如果没有回调注册，将消息存入队列
+                console.log('No callbacks registered, queueing message')
+                this.pendingMessages.push(data)
+            } else {
+                // 有回调时直接处理
+                this.callbacks.forEach(callback => callback(data))
+            }
         }
 
         this.ws.onclose = (event) => {
@@ -36,7 +45,16 @@ class WebSocketService {
     }
 
     subscribe(callback) {
+        console.log('subscribe:', callback)
         this.callbacks.add(callback)
+
+        // 处理之前队列中的消息
+        if (this.pendingMessages.length > 0) {
+            console.log('Processing pending messages:', this.pendingMessages.length)
+            this.pendingMessages.forEach(data => callback(data))
+            this.pendingMessages = []  // 清空队列
+        }
+
         if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
             this.connect()
         }
