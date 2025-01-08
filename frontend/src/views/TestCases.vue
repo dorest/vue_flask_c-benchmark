@@ -19,10 +19,9 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280">
+        <el-table-column label="操作" width="200">
           <template #default="scope">
             <el-button @click="runTest(scope.row)">运行</el-button>
-            <el-button @click="showScheduleDialog(scope.row)">定时</el-button>
             <el-button 
               type="danger" 
               @click="handleDelete(scope.row)"
@@ -330,10 +329,6 @@ export default {
       }
     }
 
-    const showScheduleDialog = (testCase) => {
-      scheduleForm.value.test_case_id = testCase.id
-      scheduleDialogVisible.value = true
-    }
 
     const createScheduledTask = async () => {
       try {
@@ -360,7 +355,6 @@ export default {
       showCreateDialog,
       scheduleDialogVisible,
       scheduleForm,
-      showScheduleDialog,
       createScheduledTask,
       executingStates,
       rules,

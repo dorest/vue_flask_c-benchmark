@@ -1,45 +1,42 @@
 <template>
   <div class="scheduled">
-    <el-row :gutter="20">
-      <el-col :span="24">
-        <el-card class="box-card">
-          <div class="clearfix">
-            <span>定时任务列表</span>
-            <el-button style="float: right; padding: 3px 0" type="text" @click="handleAdd">添加任务</el-button>
-          </div>
-          <el-table :data="tableData" style="width: 100%" @row-dblclick="handleEdit">
-            <el-table-column prop="name" label="任务名称" />
-            <el-table-column label="测试用例">
-              <template #default="{ row }">
-                {{ getTestCaseName(row.test_case_id) }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="cron" label="执行时间" />
-            <el-table-column label="状态">
-              <template #default="{ row }">
-                <el-tag :type="row.enabled ? 'success' : 'info'">
-                  {{ row.enabled ? '启用' : '禁用' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="200">
-              <template #default="{ row }">
-                <el-button
-                  size="small"
-                  :type="row.enabled ? 'warning' : 'success'"
-                  @click="handleToggle(row)"
-                >{{ row.enabled ? '禁用' : '启用' }}</el-button>
-                <el-button
-                  size="small"
-                  type="danger"
-                  @click="handleDelete(row)"
-                >删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
-      </el-col>
-    </el-row>
+    <el-card>
+      <template #header>
+        <div class="card-header">
+          <span>定时任务管理</span>
+          <el-button type="primary" @click="handleAdd">新建定时任务</el-button>
+        </div>
+      </template>
+
+      <el-table :data="tableData" style="width: 100%" @row-dblclick="handleEdit" >
+        <el-table-column prop="name" label="任务名称" />
+        <el-table-column label="测试用例">
+          <template #default="{ row }">
+            {{ getTestCaseName(row.test_case_id) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="cron" label="执行时间" />
+        <el-table-column label="状态">
+          <template #default="{ row }">
+            <el-tag :type="row.enabled ? 'success' : 'info'">
+              {{ row.enabled ? '启用' : '禁用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="200">
+          <template #default="{ row }">
+            <el-button
+              :type="row.enabled ? 'warning' : 'success'"
+              @click="handleToggle(row)"
+            >{{ row.enabled ? '禁用' : '启用' }}</el-button>
+            <el-button
+              type="danger"
+              @click="handleDelete(row)"
+            >删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
 
     <el-dialog
       v-model="dialogVisible"
@@ -340,7 +337,16 @@ export default {
 </script>
 
 <style scoped>
-.scheduled {
-  padding: 20px;
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
+
+.el-button {
+  margin-right: 8px;
+}
+
+
+
 </style> 
