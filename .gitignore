@@ -54,5 +54,3 @@ logs/
 performance-tests/results/
 performance-tests/demo/
 performance-tests/__pycache__/
-
-docker-compose.yml
