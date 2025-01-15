@@ -12,7 +12,7 @@ class WebSocketService {
         }
 
         console.log('Connecting to WebSocket...')
-        this.ws = new WebSocket('ws://localhost:5000/ws/test-status')
+        this.ws = new WebSocket(process.env.VUE_APP_WS_BASE_URL)
 
         this.ws.onopen = () => {
             console.log('WebSocket connected successfully')

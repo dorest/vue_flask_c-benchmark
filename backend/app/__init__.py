@@ -8,6 +8,11 @@ import pytz
 from flask_sock import Sock
 os.environ['TZ'] = 'Asia/Shanghai'  # 设置环境变量
 import time
+import sys
+from pathlib import Path
+sys.path.append(str(Path("performance-tests").resolve()))
+import nameconfig
+
 time.tzset()  # 重新加载时区设置
 
 db = SQLAlchemy()
@@ -20,14 +25,14 @@ def create_app():
     CORS(app)
     CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:8080"],  # 只允许前端域名
+        "origins": [f"http://{nameconfig.CORS_ORIGIN_IP}:8081"],  # 只允许前端域名
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # 允许的方法
         "allow_headers": ["Content-Type"]  # 允许的请求头
         }
     })
     
     # 配置
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://root:zxyoright@postgres_db:5432/zxy'
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'postgresql://root:zxyoright@{nameconfig.DB_CONTAINER_NAME}:5432/zxy'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # 初始化扩展

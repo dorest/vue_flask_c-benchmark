@@ -529,8 +529,7 @@ def create_scheduled_task():
         test_case = TestCase.query.get_or_404(data['test_case_id'])
         
         # 先发送到测试客户端
-        client = TestClient()
-        result = client.handle_message({
+        result = test_client.handle_message({
             'action': 'add_schedule',
             'task_id': task.id,
             'test_id': test_case.id,
@@ -562,8 +561,7 @@ def toggle_scheduled_task(id):
         test_case = TestCase.query.get_or_404(task.test_case_id)
         
         # 发送到测试客户端
-        client = TestClient()
-        result = client.handle_message({
+        result = test_client.handle_message({
             'action': 'toggle_schedule',
             'task_id': task.id,
             'enabled': not task.enabled,  # 先发送新状态
@@ -593,8 +591,7 @@ def delete_scheduled_task(id):
     task = ScheduledTask.query.get_or_404(id)
     try:
         # 发送到测试客户端
-        client = TestClient()
-        result = client.handle_message({
+        result = test_client.handle_message({
             'action': 'delete_schedule',
             'task_id': task.id
         })
@@ -621,8 +618,7 @@ def update_scheduled_task(id):
         test_case = TestCase.query.get_or_404(data['test_case_id'])
         
         # 发送到测试客户端
-        client = TestClient()
-        result = client.handle_message({
+        result = test_client.handle_message({
             'action': 'add_schedule',  # 使用 add_schedule 来更新现有任务
             'task_id': task.id,
             'test_id': test_case.id,

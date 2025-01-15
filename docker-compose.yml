@@ -3,8 +3,8 @@ version: "2"
 services:
   # Flask 后端服务
   app:
-    image: python:3.9
-    container_name: flask_app
+    image: cpp_flask_app
+    container_name: cpp_flask_app
     privileged: true
     environment:
       - FLASK_ENV=development
@@ -22,8 +22,8 @@ services:
 
   # PostgreSQL 数据库服务
   db:
-    image: postgres:15-alpine
-    container_name: postgres_db
+    image: cpp_postgres_db
+    container_name: cpp_postgres_db
     privileged: true
     environment:
       POSTGRES_USER: root
@@ -33,12 +33,12 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d
     ports:
-      - "5432:5432"
+      - "5433:5432"
 
   # Vue 前端服务
   frontend:
-    image: node:16
-    container_name: vue_frontend
+    image: cpp_vue_frontend
+    container_name: cpp_vue_frontend
     privileged: true
     working_dir: /usr/src/app
     volumes:
@@ -46,7 +46,7 @@ services:
       - ./performance-tests:/usr/src/app/performance-tests
     command: sh -c "npm install && npm run serve"
     ports:
-      - "8080:8080"
+      - "8081:8080"
 
 volumes:
   pgdata:

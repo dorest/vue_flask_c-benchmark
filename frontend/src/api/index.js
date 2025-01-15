@@ -1,9 +1,7 @@
 import axios from 'axios'
 
-const API_BASE_URL = 'http://localhost:5000'
-
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: process.env.VUE_APP_API_BASE_URL,
   timeout: 5000
 })
 // 添加响应拦截器统一处理错误

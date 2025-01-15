@@ -12,6 +12,9 @@ import psutil
 import time
 import xml.etree.ElementTree as ET
 
+import nameconfig
+
+
 class TestServer:
     def __init__(self):
         self.base_dir = '/root/flask-vue/performance-tests'
@@ -26,7 +29,7 @@ class TestServer:
         # 存储每个测试的日志队列和状态
         self.test_logs = {}
         self.test_status = {}
-        self.api_url = 'http://172.18.0.3:5000'  # 根据实际情况修改,docker inspect flask_app 查看下ip
+        self.api_url = f'http://{nameconfig.FLASK_APP_IP}:5000'  # 根据实际情况修改,docker inspect flask_app 查看下ip
         self.test_timestamps = {}  # 存储 test_case_id 对应的启动时间
         # 禁用代理设置
         os.environ['NO_PROXY'] = '*'
@@ -567,7 +570,7 @@ class TestServer:
                         }).encode())
                         
                 except Exception as e:
-                    print(f"Error handling request: {e}")
+                    print(f"Error handling request '{request['action']}': {e}")
                     try:
                         conn.sendall(json.dumps({
                             'status': 'error',

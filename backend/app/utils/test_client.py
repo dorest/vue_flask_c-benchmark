@@ -6,6 +6,10 @@ from datetime import datetime
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+import sys
+from pathlib import Path
+sys.path.append(str(Path("performance-tests").resolve()))
+import nameconfig
 
 # 配置日志
 logging.basicConfig(
@@ -16,11 +20,11 @@ logger = logging.getLogger(__name__)
 
 class TestClient:
     def __init__(self, host='172.17.0.1', port=9999, timeout=5, max_retries=3):
-        self.host = host
+        self.host = host #主机在docker容器中的ip地址，ifconfig docker0查看
         self.port = port
         self.timeout = timeout
         self.max_retries = max_retries
-        self.api_url = 'http://172.18.0.3:5000'  # 根据实际情况修改,docker inspect flask_app 查看下ip
+        self.api_url = f'http://{nameconfig.FLASK_APP_IP}:5000'  # 根据实际情况修改,docker inspect flask_app 查看下ip
         logger.info(f"TestClient initialized with host={host}, port={port}")
         
         # 添加调度器
@@ -130,6 +134,15 @@ class TestClient:
             enabled = message.get('enabled')
             job_id = f'task_{task_id}'
 
+            # 查找并删除现有任务
+            existing_job = self.scheduler.get_job(job_id)
+            if existing_job:
+                logger.info(f"Found existing job: {existing_job.id}")
+                self.scheduler.remove_job(job_id)
+                logger.info(f"Removed existing job: {job_id}")
+            else:
+                logger.info(f"No existing job found with ID: {job_id}")
+
             if enabled:
                 test_id = message.get('test_id')
                 command = message.get('command')
@@ -149,9 +162,14 @@ class TestClient:
                     }],
                     replace_existing=True
                 )
-            else:
-                if self.scheduler.get_job(job_id):
-                    self.scheduler.remove_job(job_id)
+                
+                job = self.scheduler.get_job(job_id)
+                if job:
+                    logger.info(f"Job {job_id} successfully added, next run at: {job.next_run_time}")
+                else:
+                    logger.error(f"Failed to add job {job_id}")
+                    
+                logger.info(f"======all existing jobs: { self.scheduler.get_jobs()}")
 
             return {
                 'status': 'success',

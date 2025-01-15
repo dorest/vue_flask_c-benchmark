@@ -54,3 +54,4 @@ logs/
 # 测试结果
 performance-tests/results/
 performance-tests/demo/
+performance-tests/__pycache__/
