@@ -25,7 +25,7 @@ def create_app():
     CORS(app)
     CORS(app, resources={
     r"/*": {
-        "origins": [f"http://{nameconfig.CORS_ORIGIN_IP}:8081"],  # 只允许前端域名
+        "origins": [f"http://{nameconfig.CORS_ORIGIN_IP}:{nameconfig.CORS_ORIGIN_PORT}"],  # 只允许前端域名
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # 允许的方法
         "allow_headers": ["Content-Type"]  # 允许的请求头
         }
