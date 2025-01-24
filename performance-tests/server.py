@@ -13,6 +13,7 @@ import time
 import xml.etree.ElementTree as ET
 
 import nameconfig
+from utils import heap_svg
 
 
 class TestServer:
@@ -119,32 +120,64 @@ class TestServer:
         profile_dir = os.path.join(result_dir, 'profile')
         os.makedirs(profile_dir, exist_ok=True)
 
-        # 保持原有的日志队列设置
-        log_queue = queue.Queue()
-        self.test_logs[test_id] = log_queue
         self.test_status[test_id] = 'running'
 
         def log_message(msg):
             """保持原有的日志记录功能"""
-            log_queue.put(msg)
             with open(f"{result_dir}/output.log", 'a') as f:
                 f.write(f"{msg}\n")
 
+        def cmd_run(cmd, result_dir):
+            # 保持原有的命令执行逻辑
+            process = subprocess.Popen(
+                cmd,
+                shell=True,
+                stdout=subprocess.PIPE,
+                cwd=result_dir,
+                bufsize=1,
+                universal_newlines=True
+            )
+            
+            # 保持原有的输出处理逻辑
+            while True:
+                stdout_line = process.stdout.readline()
+                print(stdout_line)
+                
+                if not stdout_line and process.poll() is not None:
+                    break
+                    
+                if stdout_line:
+                    log_message(f"[STDOUT] {stdout_line.strip()}")
+            
+            if process.returncode != 0:
+                raise Exception(f"Command failed with exit code {process.returncode}")
+
+
         def xml_to_text(xml_file, text_file):
             """将 valgrind XML 转换为可读的文本格式"""
-            import xml.etree.ElementTree as ET
-            
             try:
+                # 读取并清理文件中的无效内容
+                with open(xml_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                # 清理文件中的多余内容或尾部错误内容
+                content = content.strip()
+
+                # 重新写入清理后的内容到临时文件
+                with open(xml_file, 'w', encoding='utf-8') as f:
+                    f.write(content)
+
+                # 解析清理后的文件
                 tree = ET.parse(xml_file)
                 root = tree.getroot()
-                
+
                 with open(text_file, 'w') as f:
                     # 写入头部信息
                     for line in root.findall('.//preamble/line'):
                         if line.text:
                             f.write(f"{line.text}\n")
                     f.write("\n")
-                    
+
                     # 写入命令信息
                     cmd = root.find('.//args/argv/exe')
                     args = root.findall('.//args/argv/arg')
@@ -154,7 +187,7 @@ class TestServer:
                             if arg.text:
                                 cmd_str += f" {arg.text}"
                         f.write(f"Command: {cmd_str}\n\n")
-                    
+
                     # 写入运行状态
                     final_status = root.findall('.//status')[-1]
                     if final_status is not None:
@@ -162,18 +195,18 @@ class TestServer:
                         time = final_status.find('time')
                         if state is not None and time is not None:
                             f.write(f"Status: {state.text} in {time.text}\n\n")
-                    
+
                     # 写入错误信息
                     for error in root.findall('.//error'):
                         # 获取错误类型和描述
                         kind = error.find('kind')
                         xwhat = error.find('xwhat/text')
-                        
+
                         if kind is not None and kind.text:
                             f.write(f"\n==ERROR== {kind.text}\n")
                         if xwhat is not None and xwhat.text:
                             f.write(f"==ERROR== {xwhat.text}\n")
-                        
+
                         # 写入调用栈
                         stack = error.find('stack')
                         if stack is not None:
@@ -182,7 +215,7 @@ class TestServer:
                                 fn = frame.find('fn')
                                 file = frame.find('file')
                                 line = frame.find('line')
-                                
+
                                 if fn is not None and fn.text:
                                     frame_info = f"==ERROR==    at {fn.text}"
                                     if file is not None and file.text:
@@ -191,17 +224,25 @@ class TestServer:
                                             frame_info += f":{line.text}"
                                         frame_info += ")"
                                     f.write(f"{frame_info}\n")
-                        
+
                         f.write("\n")
-                    
+
                     # 如果没有错误信息
                     if not root.findall('.//error'):
                         f.write("No memory leaks or errors detected.\n")
-                        
+
                 return True
-            except Exception as e:
-                print(f"Error converting XML to text: {e}")
+            except ET.ParseError as e:
+                # 捕获 XML 解析错误并返回 False
+                print(f"Error parsing XML file {xml_file}: {e}")
                 return False
+            except Exception as e:
+                # 捕获其他错误
+                print(f"Unexpected error: {e}")
+                return False
+
+
+   
         def generate_memory_svg(xml_file, svg_file):
             """将 valgrind XML 输出转换为内存泄漏可视化图"""
             import xml.etree.ElementTree as ET
@@ -290,7 +331,7 @@ class TestServer:
                     if self.profiling_tools['perf']:
                         perf_data = os.path.join(profile_dir, 'perf.data')
                         perf_cmd = f"perf record -F 99 -g -o {perf_data} -- {cmd}"
-                        subprocess.run(perf_cmd, shell=True, check=True)
+                        cmd_run(perf_cmd, result_dir)
                         
                         # 生成火焰图
                         subprocess.run(f"perf script -i {perf_data} > {profile_dir}/perf.script", shell=True)
@@ -319,24 +360,34 @@ class TestServer:
                         valgrind_xml = os.path.join(profile_dir, 'valgrind.xml')
                         
                         # 只生成 XML 输出
-                        valgrind_cmd = f"valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --xml=yes --xml-file={valgrind_xml} {cmd}"
-                        subprocess.run(valgrind_cmd, shell=True, check=True)
-                        
-                        # 从 XML 生成文本日志
-                        if xml_to_text(valgrind_xml, valgrind_log):
+                        # valgrind_cmd = f"valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --xml=yes --xml-file={valgrind_xml} {cmd}"
+                        valgrind_cmd = f"valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --track-origins=yes --log-file={valgrind_log} {cmd}"
+                        cmd_run(valgrind_cmd, result_dir)
+                        if os.path.exists(valgrind_log):
                             profiling_results['valgrind'] = valgrind_log
+                            heap_path = os.path.join(profile_dir,'heap.svg')
+                            heap_svg.generate_memory_svg(profile_dir)
+                            if os.path.exists(heap_path):
+                                profiling_results['heap'] = heap_path
+
+
                         
-                        # 生成内存分析图
-                        heap_svg = os.path.join(profile_dir, 'heap')
-                        if generate_memory_svg(valgrind_xml, heap_svg):
-                            profiling_results['heap'] = heap_svg + '.svg'
+                        
+                        # # 从 XML 生成文本日志
+                        # if xml_to_text(valgrind_xml, valgrind_log):
+                        #     profiling_results['valgrind'] = valgrind_log
+                        
+                        # # 生成内存分析图
+                        # heap_svg = os.path.join(profile_dir, 'heap')
+                        # if generate_memory_svg(valgrind_xml, heap_svg):
+                        #     profiling_results['heap'] = heap_svg + '.svg'
 
                     # 3. Callgrind 调用图分析
                     if self.profiling_tools['callgrind']:
                         callgrind_out = os.path.join(profile_dir, 'callgrind.out')
                         callgrind_cmd = f"valgrind --tool=callgrind --callgrind-out-file={callgrind_out} {cmd}"
-                        subprocess.run(callgrind_cmd, shell=True, check=True)
-                        
+                        cmd_run(callgrind_cmd, result_dir)
+
                         # 生成调用图可视化
                         subprocess.run(f"gprof2dot -f callgrind {callgrind_out} | dot -Tsvg -o {profile_dir}/callgrind.svg", shell=True)
                         profiling_results['callgrind'] = f"{profile_dir}/callgrind.svg"
@@ -374,33 +425,12 @@ class TestServer:
                         prof_results = run_profiling(cmd)
                         profiling_results['tools'] = self.profiling_tools
                         profiling_results[f"command_{i}"] = prof_results
-                    
-                    # 保持原有的命令执行逻辑
-                    process = subprocess.Popen(
-                        cmd,
-                        shell=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        cwd=result_dir,
-                        bufsize=1,
-                        universal_newlines=True
-                    )
-                    
-                    # 保持原有的输出处理逻辑
-                    while True:
-                        stdout_line = process.stdout.readline()
-                        stderr_line = process.stderr.readline()
-                        
-                        if not stdout_line and not stderr_line and process.poll() is not None:
-                            break
-                            
-                        if stdout_line:
-                            log_message(f"[STDOUT] {stdout_line.strip()}")
-                        if stderr_line:
-                            log_message(f"[STDERR] {stderr_line.strip()}")
-                    
-                    if process.returncode != 0:
-                        raise Exception(f"Command failed with exit code {process.returncode}")
+
+
+                    else:
+                        cmd_run(cmd, result_dir)
+                    #目前仅支持单行命令
+                    break
 
                 # 保存性能分析结果
                 if profiling_results:
@@ -442,43 +472,23 @@ class TestServer:
             'profiling_enabled': enable_profiling
         }
     
-    def get_test_logs(self, test_id):
+    def get_test_logs(self, test_id, result_dir):
         """获取测试日志"""
         logs = []
         status = self.test_status.get(test_id, 'unknown')
         
-        print(f"获取测试日志self.test_logs：{self.test_logs}")
+        print(f"获取测试日志self.test_logs：{result_dir}")
         
-        if test_id not in self.test_logs:
-            # 如果没有实时日志，尝试从文件读取
-            result_dir = self.find_result_dir(test_id)
-            if result_dir and os.path.exists(f"{result_dir}/output.log"):
-                with open(f"{result_dir}/output.log", 'r') as f:
-                    logs = f.read().splitlines()
-        else:
-            # 从队列获取所有可用日志
-            queue = self.test_logs[test_id]
-            while not queue.empty():
-                logs.append(queue.get_nowait())
+        # 如果没有实时日志，尝试从文件读取
+        if result_dir and os.path.exists(f"{result_dir}/output.log"):
+            with open(f"{result_dir}/output.log", 'r') as f:
+                logs = f.read().splitlines()
         
         return {
             'status': status,
             'logs': logs
         }
     
-    def find_result_dir(self, test_id):
-        """查找最新的结果目录"""
-        results_dir = os.path.join(self.base_dir, 'results')
-        if not os.path.exists(results_dir):
-            return None
-            
-        matching_dirs = [d for d in os.listdir(results_dir) if d.endswith(f"_{test_id}")]
-        if not matching_dirs:
-            return None
-            
-        # 返回最新的目录
-        latest_dir = sorted(matching_dirs)[-1]
-        return os.path.join(results_dir, latest_dir)
     
     def collect_performance_metrics(self, test_id, result_dir):
         """收集性能指标"""
@@ -560,7 +570,7 @@ class TestServer:
                         
                     elif request['action'] == 'get_logs':
                         # 获取日志
-                        result = self.get_test_logs(request['test_id'])
+                        result = self.get_test_logs(request['test_id'], request['result_dir'])
                         conn.sendall(json.dumps(result).encode())
                         
                     else:
