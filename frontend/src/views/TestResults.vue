@@ -133,7 +133,7 @@
         </el-tab-pane>
         
         <!-- 新增性能分析标签页 -->
-        <el-tab-pane label="性能分析" name="profiling" v-if="hasProfileData">
+        <el-tab-pane label="性能分析" name="profiling" v-if="profileTools && hasProfileData">
           <div class="profiling-container">
             <!-- CPU Profile -->
             <div class="profile-section" v-if="profileTools.perf">
@@ -223,10 +223,29 @@
                     </div>
                   </el-tab-pane>
                   <el-tab-pane label="可视化结果" name="heap">
-                    <div class="svg-container" v-if="profileData.heap">
+                    <!-- <div class="svg-container" v-if="profileData.heap">
                       <object :data="getContainerPath(profileData.heap)" type="image/svg+xml"></object>
                     </div>
-                    <div class="no-data" v-else>暂无可视化结果</div>
+                    <div class="no-data" v-else>暂无可视化结果</div> -->
+                    <div class="profile-content">
+                      <div class="svg-container">
+                        <el-button 
+                          v-if="profileData?.heap" 
+                          @click="openSvgInNewTab(profileData.heap)" 
+                          size="small" 
+                          style="margin-bottom: 10px;"
+                        >
+                          在新窗口打开
+                        </el-button>
+                        <embed
+                          v-if="profileData?.heap"
+                          :src="getContainerPath(profileData.heap)" 
+                          type="image/svg+xml"
+                          class="flame-graph"
+                        />
+                        <div v-else class="no-data">暂无可视化数据</div>
+                      </div>
+                    </div>
                   </el-tab-pane>
                 </el-tabs>
               </div>
@@ -593,7 +612,8 @@ export default {
           api.getTestResultDetails(result.id),
           api.getTestProfile(result.id)
         ])
-        console.log(profileDetails.data)
+        console.log('=======profileDetails===========')
+        console.log(profileDetails.data.profile_results)
         console.log(resultDetails.data)
         // 处理常规测试结果
         updateCharts(resultDetails.data)
@@ -626,6 +646,8 @@ export default {
         } else {
           try {
             const logsResponse = await api.getTestLogs(result.id)
+            console.log('=======logResponse========')
+            console.log(logsResponse.data)
             if (logsResponse.data?.logs) {
               testLogs.value = logsResponse.data.logs
             }
@@ -1007,7 +1029,7 @@ export default {
 }
 
 .console-output {
-  height: 400px;
+  height: 800px;
   overflow-y: auto;
   background: #1e1e1e;
   padding: 10px;

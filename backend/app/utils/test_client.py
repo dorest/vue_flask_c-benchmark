@@ -42,12 +42,13 @@ class TestClient:
             'profiling_config': profiling_config
         })
     
-    def get_logs(self, test_id):
+    def get_logs(self, test_id, result_dir):
         """获取测试日志"""
         logger.debug(f"Getting logs for test {test_id}")
         return self._send_request({
             'action': 'get_logs',
-            'test_id': test_id
+            'test_id': test_id,
+            'result_dir': result_dir
         })
     
     def check_connection(self):
@@ -269,52 +270,61 @@ class TestClient:
         """发送请求到测试服务器，支持重试"""
         retry_count = 0
         last_error = None
-        
+
         while retry_count < self.max_retries:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(self.timeout)
-            
             try:
-                logger.debug(f"Attempt {retry_count + 1}/{self.max_retries} "
-                           f"to connect to {self.host}:{self.port}")
-                
-                # 尝试连接
-                sock.connect((self.host, self.port))
-                logger.debug("Connection established")
-                
-                # 发送请求
-                request_str = json.dumps(request_data)
-                logger.debug(f"Sending request: {request_str}")
-                sock.send(request_str.encode())
-                
-                # 接收响应
-                response = sock.recv(4096).decode()
-                logger.debug(f"Received response: {response}")
-                
-                return json.loads(response)
-                
-            except socket.timeout:
-                last_error = f"Connection timeout after {self.timeout} seconds"
-                logger.error(last_error)
-            except ConnectionRefusedError:
-                last_error = f"Connection refused to {self.host}:{self.port}"
-                logger.error(last_error)
-            except json.JSONDecodeError as e:
-                last_error = f"Invalid JSON response: {str(e)}"
-                logger.error(last_error)
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    sock.settimeout(self.timeout)
+
+                    logger.debug(f"Attempt {retry_count + 1}/{self.max_retries} "
+                                f"to connect to {self.host}:{self.port}")
+
+                    # 尝试连接
+                    sock.connect((self.host, self.port))
+                    logger.debug("Connection established")
+
+                    # 发送请求
+                    request_str = json.dumps(request_data)
+                    logger.debug(f"Sending request: {request_str}")
+                    sock.send(request_str.encode())
+
+                    # 接收响应
+                    response = self._receive_response(sock)
+                    logger.debug(f"Received response: {response}")
+
+                    return json.loads(response)
+
+            except (socket.timeout, ConnectionRefusedError, json.JSONDecodeError) as e:
+                last_error = str(e)
+                self.log_error(last_error)
             except Exception as e:
                 last_error = str(e)
-                logger.error(f"Unexpected error: {last_error}", exc_info=True)
-            finally:
-                sock.close()
-            
+                self.log_error(f"Unexpected error: {last_error}", exc_info=True)
+
             retry_count += 1
             if retry_count < self.max_retries:
                 wait_time = retry_count * 2  # 指数退避
                 logger.info(f"Waiting {wait_time} seconds before retry...")
                 time.sleep(wait_time)
-        
+
         return {
             'status': 'error',
             'error': f"Failed after {self.max_retries} attempts. Last error: {last_error}"
         }
+
+    def _receive_response(self, sock):
+        """接收完整的响应数据"""
+        chunks = []
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b''.join(chunks).decode()
+
+    def log_error(self, error_msg, exc_info=False):
+        """日志记录"""
+        logger.error(error_msg, exc_info=exc_info)
+
+
+

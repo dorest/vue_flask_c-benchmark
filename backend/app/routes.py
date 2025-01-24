@@ -322,7 +322,7 @@ def get_test_logs(id):
         result = TestResult.query.get_or_404(id)
         
         # 从测试服务器获取日志
-        response = test_client.get_logs(result.test_case_id)
+        response = test_client.get_logs(result.test_case_id, result.result_dir)
         
         # 如果测试已完成，更新状态
         if response.get('status') == 'completed':

@@ -54,3 +54,5 @@ logs/
 performance-tests/results/
 performance-tests/demo/
 performance-tests/__pycache__/
+performance-tests/*/__pycache__/
+performance-tests/*/*/__pycache__/
