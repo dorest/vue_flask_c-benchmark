@@ -4,7 +4,7 @@ import subprocess
 import os
 from datetime import datetime
 import threading
-import queue
+import signal
 import requests  # 新增
 import logging
 from logging.handlers import RotatingFileHandler
@@ -43,6 +43,7 @@ class TestServer:
             'valgrind': True,  # 内存分析
             'callgrind': True  # 调用图分析
         }
+        self.process_pool = {} 
         
     def setup_logging(self):
         """配置日志记录器"""
@@ -135,9 +136,15 @@ class TestServer:
                 stdout=subprocess.PIPE,
                 cwd=result_dir,
                 bufsize=1,
-                universal_newlines=True
+                universal_newlines=True,
+                preexec_fn=os.setsid
             )
-            
+            #加入进程池
+            if result_dir not in self.process_pool:
+                self.process_pool[result_dir] = []
+
+            print(f"===========append_process_pool==============:{result_dir}==========={process.pid}")
+            self.process_pool[result_dir].append(process)
             # 保持原有的输出处理逻辑
             while True:
                 stdout_line = process.stdout.readline()
@@ -459,6 +466,9 @@ class TestServer:
             finally:
                 if test_id in self.test_logs:
                     del self.test_logs[test_id]
+                
+                if result_dir in self.process_pool:
+                    del self.process_pool[result_dir]  
 
         # 启动测试线程
         thread = threading.Thread(target=run_test)
@@ -472,6 +482,40 @@ class TestServer:
             'profiling_enabled': enable_profiling
         }
     
+    
+    def kill_test_processes(self, result_dir):
+        if result_dir in self.process_pool:
+            processes = self.process_pool[result_dir]
+            for process in processes:
+                try:
+                    print(f"===========process_pool==============:{process.pid}")
+                    if isinstance(process, int): 
+                        pid = process
+                    else:
+                        pid = process.pid  
+                    
+                    self._kill_process_tree(pid)
+                    self.logger.info(f"Process {pid} and its children terminated")
+                except Exception as e:
+                    self.logger.error(f"Failed to kill process {pid}: {e}")
+            
+            del self.process_pool[result_dir]  
+            return {'status': 'success', 'message': f"Processes for {result_dir} killed."}
+        else:
+            return {'status': 'failure', 'message': f"No processes found for {result_dir}."}
+
+    def _kill_process_tree(self, pid):
+        try:
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True) 
+            for child in children:
+                child.kill()
+                self.logger.info(f"Killed child process {child.pid}")
+            parent.kill()
+            self.logger.info(f"Killed main process {pid}")
+        except psutil.NoSuchProcess:
+            self.logger.warning(f"Process {pid} not found")
+
     def get_test_logs(self, test_id, result_dir):
         """获取测试日志"""
         logs = []
@@ -571,6 +615,10 @@ class TestServer:
                     elif request['action'] == 'get_logs':
                         # 获取日志
                         result = self.get_test_logs(request['test_id'], request['result_dir'])
+                        conn.sendall(json.dumps(result).encode())
+                    
+                    elif request['action'] == 'kill_test_processes':
+                        result = self.kill_test_processes(request['result_dir'])
                         conn.sendall(json.dumps(result).encode())
                         
                     else:

@@ -207,6 +207,7 @@ def get_test_result_details(id):
         result = TestResult.query.get_or_404(id)
         
         # 获取性能数据
+        
         perf_data = result.perf_data or {}
         
         # 获取日志
@@ -361,6 +362,10 @@ def delete_test_result(id):
             import shutil
             shutil.rmtree(container_path)
         
+        response = test_client.kill_test_processes(result.result_dir)
+        if response['status'] == 'error':
+            return jsonify({'message': response['message']}), 500
+
         # 删除数据库记录
         db.session.delete(result)
         db.session.commit()

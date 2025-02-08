@@ -51,6 +51,13 @@ class TestClient:
             'result_dir': result_dir
         })
     
+    def kill_test_processes(self, result_dir):
+        logger.debug(f"Kill processes for  {result_dir}")
+        return self._send_request({
+            'action': 'kill_test_processes',
+            'result_dir': result_dir
+        })
+    
     def check_connection(self):
         """检查与测试服务器的连接"""
         logger.debug(f"Checking connection to {self.host}:{self.port}")
