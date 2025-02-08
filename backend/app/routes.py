@@ -207,16 +207,28 @@ def get_test_result_details(id):
         result = TestResult.query.get_or_404(id)
         
         # 获取性能数据
-        
-        perf_data = result.perf_data or {}
+        perf_data = {}
         
         # 获取日志
         logs = []
         if result.result_dir:
-            log_path = os.path.join(result.result_dir, 'output.log')
+            container_path = result.result_dir.replace(
+                '/root/flask-vue', 
+                '/usr/src/app'
+            )
+        
+            log_path = os.path.join(container_path, 'output.log')
             if os.path.exists(log_path):
                 with open(log_path, 'r') as f:
                     logs = f.read().splitlines()
+            
+            perf_path = os.path.join(container_path, 'performance.json')
+            if os.path.exists(perf_path):
+                with open(perf_path, 'r') as f:
+                    perf_data = json.load(f)
+        
+        current_app.logger.info(f"<<<<<<<<<<<perf_data: {perf_data}")
+
         
         # 构造返回数据
         response_data = {
